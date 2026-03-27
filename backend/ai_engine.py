@@ -63,36 +63,15 @@ def preprocess_image(image_path: str) -> str:
     return image_path
 
 
-def detect_debris(image_path: str) -> list[dict]:
-    """
-    Roboflow API ile görüntüdeki enkazları tespit eder.
-    
-    Returns:
-        Her bir enkaz için dict listesi:
-        {
-            "x": piksel_x,
-            "y": piksel_y,
-            "width": piksel_genislik,
-            "height": piksel_yukseklik,
-            "confidence": güven_skoru,
-            "class": sınıf_adı,
-            "area_px": piksel_alan
-        }
-    """
-    # Ön-işleme uygula
-    preprocess_image(image_path)
-
-    # Roboflow inference — optimize edilmiş parametrelerle
-    logger.info(f"AI analizi başlatılıyor (confidence={AI_CONFIDENCE}, iou={AI_IOU_THRESHOLD})")
+def _infer_single(image_path: str) -> list[dict]:
+    """Tek bir görüntü üzerinde Roboflow inference çalıştırır."""
     try:
-        # SDK versiyonuna göre confidence/iou parametrelerini ayarla
         _client.configure(InferenceConfiguration(
             confidence_threshold=AI_CONFIDENCE,
             iou_threshold=AI_IOU_THRESHOLD
         ))
         result = _client.infer(image_path, model_id=ROBOFLOW_MODEL_ID)
     except TypeError:
-        # Fallback: configure yoksa veya farklı API sürümü
         try:
             result = _client.infer(image_path, model_id=ROBOFLOW_MODEL_ID)
         except Exception as e:
@@ -101,30 +80,165 @@ def detect_debris(image_path: str) -> list[dict]:
     except Exception as e:
         logger.error(f"Roboflow API hatası: {e}")
         return []
+    return result.get("predictions", [])
 
-    raw_predictions = result.get("predictions", [])
-    logger.info(f"Ham tespit sayısı: {len(raw_predictions)}")
 
-    # Sonuçları zenginleştir + confidence filtresi uygula
-    detections = []
-    for p in raw_predictions:
+def _nms_merge(detections: list[dict], iou_thresh: float = 0.3) -> list[dict]:
+    """
+    Non-Maximum Suppression — üst üste binen tespitleri birleştirir.
+    Farklı tile'lardan gelen aynı enkazın çift sayılmasını önler.
+    """
+    if not detections:
+        return []
+
+    # Confidence'a göre sırala (yüksekten düşüğe)
+    sorted_dets = sorted(detections, key=lambda d: d["confidence"], reverse=True)
+    keep = []
+
+    while sorted_dets:
+        best = sorted_dets.pop(0)
+        keep.append(best)
+
+        remaining = []
+        for det in sorted_dets:
+            if _iou(best, det) < iou_thresh:
+                remaining.append(det)
+        sorted_dets = remaining
+
+    return keep
+
+
+def _iou(a: dict, b: dict) -> float:
+    """İki bounding box arasındaki IoU (Intersection over Union) hesaplar."""
+    ax1 = a["x"] - a["width"] / 2
+    ay1 = a["y"] - a["height"] / 2
+    ax2 = a["x"] + a["width"] / 2
+    ay2 = a["y"] + a["height"] / 2
+
+    bx1 = b["x"] - b["width"] / 2
+    by1 = b["y"] - b["height"] / 2
+    bx2 = b["x"] + b["width"] / 2
+    by2 = b["y"] + b["height"] / 2
+
+    ix1 = max(ax1, bx1)
+    iy1 = max(ay1, by1)
+    ix2 = min(ax2, bx2)
+    iy2 = min(ay2, by2)
+
+    if ix2 <= ix1 or iy2 <= iy1:
+        return 0.0
+
+    inter = (ix2 - ix1) * (iy2 - iy1)
+    area_a = (ax2 - ax1) * (ay2 - ay1)
+    area_b = (bx2 - bx1) * (by2 - by1)
+    union = area_a + area_b - inter
+
+    return inter / union if union > 0 else 0.0
+
+
+def detect_debris(image_path: str) -> list[dict]:
+    """
+    SAHI (Slicing Aided Hyper Inference) ile enkaz tespiti.
+    
+    Büyük uydu görüntüsünü küçük tile'lara bölerek her birini ayrı analiz eder.
+    Bu sayede küçük enkazlar da yakalanır — model 640x640 için eğitilmiş,
+    1756x1538 görüntüde binalar çok küçük kalıp kaçırılıyordu.
+    
+    Akış:
+    1. Görüntüyü ön-işle
+    2. Tile boyutuna göre parçala (%20 overlap)
+    3. Her tile'ı API'ye gönder
+    4. Sonuçları orijinal koordinatlara dönüştür
+    5. NMS ile çift tespitleri birleştir
+    """
+    preprocess_image(image_path)
+
+    img = cv2.imread(image_path)
+    if img is None:
+        logger.error(f"Görüntü okunamadı: {image_path}")
+        return []
+
+    img_h, img_w = img.shape[:2]
+    
+    # Tile ayarları
+    TILE_SIZE = 640
+    OVERLAP = 0.20  # %20 örtüşme
+    stride = int(TILE_SIZE * (1 - OVERLAP))  # 512 piksel adım
+
+    logger.info(f"SAHI başlatılıyor: görüntü={img_w}x{img_h}, tile={TILE_SIZE}, stride={stride}")
+
+    all_predictions = []
+    tile_count = 0
+    import tempfile, os
+
+    for y_start in range(0, img_h, stride):
+        for x_start in range(0, img_w, stride):
+            # Tile'ı kes
+            x_end = min(x_start + TILE_SIZE, img_w)
+            y_end = min(y_start + TILE_SIZE, img_h)
+            
+            # Çok küçük kenar tile'larını atla
+            if (x_end - x_start) < TILE_SIZE // 2 or (y_end - y_start) < TILE_SIZE // 2:
+                continue
+
+            tile = img[y_start:y_end, x_start:x_end]
+            tile_count += 1
+
+            # Tile'ı geçici dosyaya kaydet
+            tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+            cv2.imwrite(tmp.name, tile, [cv2.IMWRITE_JPEG_QUALITY, 90])
+            tmp.close()
+
+            try:
+                preds = _infer_single(tmp.name)
+                
+                # Koordinatları orijinal görüntüye dönüştür
+                for p in preds:
+                    conf = p.get("confidence", 0)
+                    if conf < AI_CONFIDENCE:
+                        continue
+                    all_predictions.append({
+                        "x": p["x"] + x_start,
+                        "y": p["y"] + y_start,
+                        "width": p.get("width", 0),
+                        "height": p.get("height", 0),
+                        "confidence": conf,
+                        "class": p.get("class", "debris"),
+                    })
+            finally:
+                os.unlink(tmp.name)
+
+    logger.info(f"SAHI tamamlandı: {tile_count} tile tarandı, {len(all_predictions)} ham tespit")
+
+    # Ayrıca tam görüntüyü de bir kez tarat (büyük enkazları yakalamak için)
+    full_preds = _infer_single(image_path)
+    for p in full_preds:
         conf = p.get("confidence", 0)
         if conf < AI_CONFIDENCE:
             continue
-        area_px = p.get("width", 0) * p.get("height", 0)
-        detections.append({
+        all_predictions.append({
             "x": p["x"],
             "y": p["y"],
             "width": p.get("width", 0),
             "height": p.get("height", 0),
             "confidence": conf,
             "class": p.get("class", "debris"),
-            "area_px": area_px,
         })
 
-    # Büyükten küçüğe sırala (büyük enkazlar daha tehlikeli)
+    logger.info(f"Tam görüntü + SAHI toplam: {len(all_predictions)} ham tespit")
+
+    # NMS ile çift tespitleri birleştir
+    merged = _nms_merge(all_predictions, iou_thresh=AI_IOU_THRESHOLD)
+
+    # Alan hesapla ve sırala
+    detections = []
+    for det in merged:
+        area_px = det.get("width", 0) * det.get("height", 0)
+        det["area_px"] = area_px
+        detections.append(det)
+
     detections.sort(key=lambda d: d["area_px"], reverse=True)
-    logger.info(f"Filtrelenmiş tespit sayısı: {len(detections)}")
+    logger.info(f"NMS sonrası filtrelenmiş tespit: {len(detections)}")
 
     return detections
 

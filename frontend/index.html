@@ -2,117 +2,98 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Otonom Afet Komuta Merkezi</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
+        body, html { margin: 0; padding: 0; height: 100%; font-family: sans-serif; overflow: hidden; background: #000; }
         #map { height: 100vh; width: 100vw; }
-        #ui-panel { 
-            position: absolute; top: 20px; left: 20px; z-index: 1000; 
-            background: rgba(15, 23, 42, 0.95); color: white; padding: 20px; 
-            border-radius: 12px; border: 1px solid #334155; width: 340px; 
-            box-shadow: 0 8px 16px rgba(0,0,0,0.5); backdrop-filter: blur(5px);
+        .ui-panel {
+            position: absolute; top: 20px; left: 20px; z-index: 1000;
+            background: rgba(15, 23, 42, 0.95); color: white; padding: 25px;
+            border-radius: 15px; width: 300px; box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+            backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1);
         }
-        h2 { margin-top: 0; font-size: 1.3rem; border-bottom: 1px solid #475569; padding-bottom: 10px; color: #38bdf8;}
-        .info-box { background: #1e293b; padding: 10px; border-radius: 6px; margin-bottom: 15px; font-size: 0.9rem; border: 1px dashed #475569;}
-        input[type="file"] { width: 100%; margin-bottom: 15px; color: #94a3b8; font-size: 0.9rem; }
-        input[type="file"]::file-selector-button { background: #334155; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer;}
-        button { width: 100%; padding: 14px; cursor: pointer; background: #0284c7; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 1rem;}
-        button:hover { background: #0369a1; }
-        button:disabled { background: #475569; cursor: not-allowed; }
-        #status { margin-top: 15px; font-size: 0.9rem; color: #cbd5e1; font-weight: 500;}
-        .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; margin-right: 5px; }
-        .bg-red { background: #ef4444; } .bg-green { background: #10b981; }
+        button {
+            width: 100%; background: #3182ce; color: white; border: none;
+            padding: 15px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 16px;
+        }
+        .status { margin-top: 15px; padding: 12px; border-radius: 6px; background: rgba(0,0,0,0.4); font-size: 13px; border-left: 4px solid #3182ce; }
     </style>
 </head>
 <body>
-    <div id="ui-panel">
-        <h2>🛰️ Canlı Rota Motoru</h2>
-        <div class="info-box">
-            <b>1. Haritadan Konum Seç:</b><br>
-            <span class="badge bg-green">A</span> Başlangıç: <span id="start-coords">Bekleniyor...</span><br>
-            <span class="badge bg-red">B</span> Hedef: <span id="end-coords">Bekleniyor...</span>
-        </div>
-        <div class="info-box">
-            <b>2. Uydu Fotoğrafını Yükle:</b><br>
-            <input type="file" id="fotoInput" accept="image/*">
-        </div>
-        <button id="baslatBtn" onclick="sistemiTetikle()">Yapay Zekayı Ateşle</button>
-        <p id="status">Sistem hazır. Konum ve fotoğraf bekleniyor.</p>
-    </div>
-    <div id="map"></div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script>
-        var map = L.map('map').setView([36.9200, 34.8875], 14);
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-            maxZoom: 18, attribution: 'Esri & Maxar'
-        }).addTo(map);
+<div class="ui-panel">
+    <h2>🚀 Otonom Rota</h2>
+    <p style="font-size: 11px;">1. A ve B seç. 2. Yakınlaş. 3. Ateşle!</p>
+    <button id="analizBtn" onclick="otonomAnalizEt()">YAPAY ZEKAYI ATEŞLE</button>
+    <div id="statusBox" class="status">Sistem hazır.</div>
+</div>
 
-        var startMarker = null, endMarker = null, cizilenRota = null, enkazCemberleri = [];
+<div id="map"></div>
 
-        map.on('click', function(e) {
-            if (!startMarker) {
-                startMarker = L.marker(e.latlng).addTo(map).bindPopup("Arama Kurtarma Ekibi").openPopup();
-                document.getElementById('start-coords').innerText = e.latlng.lat.toFixed(4) + ", " + e.latlng.lng.toFixed(4);
-            } else if (!endMarker) {
-                endMarker = L.marker(e.latlng).addTo(map).bindPopup("Hedef Bölge").openPopup();
-                document.getElementById('end-coords').innerText = e.latlng.lat.toFixed(4) + ", " + e.latlng.lng.toFixed(4);
-            } else {
-                map.removeLayer(startMarker); map.removeLayer(endMarker);
-                if(cizilenRota) map.removeLayer(cizilenRota);
-                enkazCemberleri.forEach(c => map.removeLayer(c));
-                
-                startMarker = L.marker(e.latlng).addTo(map).bindPopup("Arama Kurtarma Ekibi").openPopup();
-                endMarker = null;
-                document.getElementById('start-coords').innerText = e.latlng.lat.toFixed(4) + ", " + e.latlng.lng.toFixed(4);
-                document.getElementById('end-coords').innerText = "Bekleniyor...";
-            }
-        });
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
-        async function sistemiTetikle() {
-            var fotoFile = document.getElementById('fotoInput').files[0];
-            if (!startMarker || !endMarker) return alert("Başlangıç ve Hedef noktalarını seçmelisin!");
-            if (!fotoFile) return alert("Uydu fotoğrafını yüklemelisin!");
+<script>
+    const map = L.map('map', { preferCanvas: true, maxZoom: 22 }).setView([36.9165, 34.8951], 17);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Maxar', maxZoom: 22, maxNativeZoom: 18
+    }).addTo(map);
 
-            document.getElementById('status').innerHTML = "⏳ AI fotoğrafı tarıyor, yollar hesaplanıyor...";
-            document.getElementById('baslatBtn').disabled = true;
+    let markers = { A: null, B: null }, routeLayer = null, enkazLayers = [];
 
-            var formData = new FormData();
-            formData.append("baslangic_lat", startMarker.getLatLng().lat);
-            formData.append("baslangic_lon", startMarker.getLatLng().lng);
-            formData.append("hedef_lat", endMarker.getLatLng().lat);
-            formData.append("hedef_lon", endMarker.getLatLng().lng);
-            formData.append("uydu_fotosu", fotoFile);
+    map.on('click', (e) => {
+        if (!markers.A) { markers.A = L.marker(e.latlng, {draggable: true}).addTo(map).bindPopup("A").openPopup(); }
+        else if (!markers.B) { markers.B = L.marker(e.latlng, {draggable: true}).addTo(map).bindPopup("B").openPopup(); }
+    });
+
+    async function otonomAnalizEt() {
+        if (!markers.A || !markers.B) return alert("A ve B noktalarını seç moruk!");
+        const status = document.getElementById('statusBox');
+        status.innerText = "📸 Analiz yapılıyor...";
+
+        const bounds = map.getBounds();
+        const nw = bounds.getNorthWest();
+        const se = bounds.getSouthEast();
+
+        const canvas = await html2canvas(document.getElementById('map'), { useCORS: true, scale: 1 });
+        
+        canvas.toBlob(async (blob) => {
+            const formData = new FormData();
+            formData.append('uydu_fotosu', blob, 'viewport.png');
+            formData.append('nw_lat', nw.lat); formData.append('nw_lon', nw.lng);
+            formData.append('se_lat', se.lat); formData.append('se_lon', se.lng);
+            formData.append('baslangic_lat', markers.A.getLatLng().lat);
+            formData.append('baslangic_lon', markers.A.getLatLng().lng);
+            formData.append('hedef_lat', markers.B.getLatLng().lat);
+            formData.append('hedef_lon', markers.B.getLatLng().lng);
 
             try {
-                const response = await fetch('http://127.0.0.1:8000/api/gercek-analiz', { method: 'POST', body: formData });
-                const data = await response.json();
+                const response = await fetch('http://127.0.0.1:8000/api/otonom-analiz', { method: 'POST', body: formData });
+                const res = await response.json();
+                if (res.durum === "basarili") {
+                    status.innerHTML = `✅ Analiz bitti.<br>🚙 Rota hazır!`;
+                    cizSonuc(res);
+                } else { status.innerText = "❌ Hata: " + res.mesaj; }
+            } catch (e) { status.innerText = "❌ Sunucu hatası!"; }
+        }, 'image/png');
+    }
 
-                if (data.durum === "basarili") {
-                    if(cizilenRota) map.removeLayer(cizilenRota);
-                    enkazCemberleri.forEach(c => map.removeLayer(c));
-                    enkazCemberleri = [];
+    function cizSonuc(res) {
+        if (routeLayer) map.removeLayer(routeLayer);
+        enkazLayers.forEach(l => map.removeLayer(l));
+        enkazLayers = [];
 
-                    data.enkazlar.forEach(coord => {
-                        var cember = L.circle(coord, {color: 'red', fillColor: '#ef4444', fillOpacity: 0.6, radius: 80}).addTo(map);
-                        enkazCemberleri.push(cember);
-                    });
+        res.enkazlar.forEach(coord => {
+            const circle = L.circle(coord, { color: 'red', radius: 8, fillOpacity: 0.5 }).addTo(map);
+            enkazLayers.push(circle);
+        });
 
-                    cizilenRota = L.polyline(data.guvenli_rota, {color: '#0ea5e9', weight: 6, opacity: 0.9, dashArray: '10, 10'}).addTo(map);
-                    map.fitBounds(cizilenRota.getBounds(), {padding: [50, 50]});
-                    
-                    document.getElementById('status').innerHTML = `✅ <b>Başarılı!</b> AI ${data.tespit_edilen_enkaz_sayisi} enkaz/engel buldu. Rota oluşturuldu.`;
-                } else {
-                    document.getElementById('status').innerHTML = "❌ Hata: " + data.mesaj;
-                }
-            } catch(e) {
-                document.getElementById('status').innerHTML = "❌ Sunucuya ulaşılamadı. Python çalışıyor mu?";
-            } finally {
-                document.getElementById('baslatBtn').disabled = false;
-            }
+        if (res.guvenli_rota && res.guvenli_rota.length > 1) {
+            // Fosforlu kalın turuncu şerit
+            routeLayer = L.polyline(res.guvenli_rota, { color: '#ff7800', weight: 10, opacity: 1.0 }).addTo(map);
         }
-    </script>
+    }
+</script>
 </body>
 </html>

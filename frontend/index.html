@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Otonom Afet Komuta Merkezi</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
+        #map { height: 100vh; width: 100vw; }
+        #ui-panel { 
+            position: absolute; top: 20px; left: 20px; z-index: 1000; 
+            background: rgba(15, 23, 42, 0.95); color: white; padding: 20px; 
+            border-radius: 12px; border: 1px solid #334155; width: 340px; 
+            box-shadow: 0 8px 16px rgba(0,0,0,0.5); backdrop-filter: blur(5px);
+        }
+        h2 { margin-top: 0; font-size: 1.3rem; border-bottom: 1px solid #475569; padding-bottom: 10px; color: #38bdf8;}
+        .info-box { background: #1e293b; padding: 10px; border-radius: 6px; margin-bottom: 15px; font-size: 0.9rem; border: 1px dashed #475569;}
+        input[type="file"] { width: 100%; margin-bottom: 15px; color: #94a3b8; font-size: 0.9rem; }
+        input[type="file"]::file-selector-button { background: #334155; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer;}
+        button { width: 100%; padding: 14px; cursor: pointer; background: #0284c7; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 1rem;}
+        button:hover { background: #0369a1; }
+        button:disabled { background: #475569; cursor: not-allowed; }
+        #status { margin-top: 15px; font-size: 0.9rem; color: #cbd5e1; font-weight: 500;}
+        .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; margin-right: 5px; }
+        .bg-red { background: #ef4444; } .bg-green { background: #10b981; }
+    </style>
+</head>
+<body>
+    <div id="ui-panel">
+        <h2>🛰️ Canlı Rota Motoru</h2>
+        <div class="info-box">
+            <b>1. Haritadan Konum Seç:</b><br>
+            <span class="badge bg-green">A</span> Başlangıç: <span id="start-coords">Bekleniyor...</span><br>
+            <span class="badge bg-red">B</span> Hedef: <span id="end-coords">Bekleniyor...</span>
+        </div>
+        <div class="info-box">
+            <b>2. Uydu Fotoğrafını Yükle:</b><br>
+            <input type="file" id="fotoInput" accept="image/*">
+        </div>
+        <button id="baslatBtn" onclick="sistemiTetikle()">Yapay Zekayı Ateşle</button>
+        <p id="status">Sistem hazır. Konum ve fotoğraf bekleniyor.</p>
+    </div>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        var map = L.map('map').setView([36.9200, 34.8875], 14);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 18, attribution: 'Esri & Maxar'
+        }).addTo(map);
+
+        var startMarker = null, endMarker = null, cizilenRota = null, enkazCemberleri = [];
+
+        map.on('click', function(e) {
+            if (!startMarker) {
+                startMarker = L.marker(e.latlng).addTo(map).bindPopup("Arama Kurtarma Ekibi").openPopup();
+                document.getElementById('start-coords').innerText = e.latlng.lat.toFixed(4) + ", " + e.latlng.lng.toFixed(4);
+            } else if (!endMarker) {
+                endMarker = L.marker(e.latlng).addTo(map).bindPopup("Hedef Bölge").openPopup();
+                document.getElementById('end-coords').innerText = e.latlng.lat.toFixed(4) + ", " + e.latlng.lng.toFixed(4);
+            } else {
+                map.removeLayer(startMarker); map.removeLayer(endMarker);
+                if(cizilenRota) map.removeLayer(cizilenRota);
+                enkazCemberleri.forEach(c => map.removeLayer(c));
+                
+                startMarker = L.marker(e.latlng).addTo(map).bindPopup("Arama Kurtarma Ekibi").openPopup();
+                endMarker = null;
+                document.getElementById('start-coords').innerText = e.latlng.lat.toFixed(4) + ", " + e.latlng.lng.toFixed(4);
+                document.getElementById('end-coords').innerText = "Bekleniyor...";
+            }
+        });
+
+        async function sistemiTetikle() {
+            var fotoFile = document.getElementById('fotoInput').files[0];
+            if (!startMarker || !endMarker) return alert("Başlangıç ve Hedef noktalarını seçmelisin!");
+            if (!fotoFile) return alert("Uydu fotoğrafını yüklemelisin!");
+
+            document.getElementById('status').innerHTML = "⏳ AI fotoğrafı tarıyor, yollar hesaplanıyor...";
+            document.getElementById('baslatBtn').disabled = true;
+
+            var formData = new FormData();
+            formData.append("baslangic_lat", startMarker.getLatLng().lat);
+            formData.append("baslangic_lon", startMarker.getLatLng().lng);
+            formData.append("hedef_lat", endMarker.getLatLng().lat);
+            formData.append("hedef_lon", endMarker.getLatLng().lng);
+            formData.append("uydu_fotosu", fotoFile);
+
+            try {
+                const response = await fetch('http://127.0.0.1:8000/api/gercek-analiz', { method: 'POST', body: formData });
+                const data = await response.json();
+
+                if (data.durum === "basarili") {
+                    if(cizilenRota) map.removeLayer(cizilenRota);
+                    enkazCemberleri.forEach(c => map.removeLayer(c));
+                    enkazCemberleri = [];
+
+                    data.enkazlar.forEach(coord => {
+                        var cember = L.circle(coord, {color: 'red', fillColor: '#ef4444', fillOpacity: 0.6, radius: 80}).addTo(map);
+                        enkazCemberleri.push(cember);
+                    });
+
+                    cizilenRota = L.polyline(data.guvenli_rota, {color: '#0ea5e9', weight: 6, opacity: 0.9, dashArray: '10, 10'}).addTo(map);
+                    map.fitBounds(cizilenRota.getBounds(), {padding: [50, 50]});
+                    
+                    document.getElementById('status').innerHTML = `✅ <b>Başarılı!</b> AI ${data.tespit_edilen_enkaz_sayisi} enkaz/engel buldu. Rota oluşturuldu.`;
+                } else {
+                    document.getElementById('status').innerHTML = "❌ Hata: " + data.mesaj;
+                }
+            } catch(e) {
+                document.getElementById('status').innerHTML = "❌ Sunucuya ulaşılamadı. Python çalışıyor mu?";
+            } finally {
+                document.getElementById('baslatBtn').disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>

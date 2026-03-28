@@ -73,7 +73,8 @@ function initMap() {
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
         attribution: 'Maxar | Esri',
         maxZoom: 22,
-        maxNativeZoom: 18
+        maxNativeZoom: 18,
+        crossOrigin: ''
     }).addTo(map);
 
     // Harita tıklama — A ve B noktası seç

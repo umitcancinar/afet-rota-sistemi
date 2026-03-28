@@ -470,6 +470,12 @@ async function submitDebrisReport(e) {
                     throw new Error(errObj.error ? errObj.error.message : `HTTP ${response.status}`);
                 }
 
+                const result = await response.json();
+                if(result && result.name) {
+                    // Extract ID from full document name path
+                    reportData.id = result.name.split('/').pop();
+                }
+
                 showDebrisMessage('Enkaz bildirimi basariyla kaydedildi!', 'success');
             } catch (err) {
                 console.warn('REST API Firestore Hatasi: ', err.message);
@@ -543,13 +549,24 @@ function addDebrisMarkerToMap(data) {
     };
 
     const color = collapseColor[data.yikilma_orani] || '#ef4444';
+    
+    // Rastgele ID atamasini saglama
+    if (!data.id) data.id = 'temp_' + Date.now() + '_' + Math.random().toString(36).substring(7);
 
-    const marker = L.circleMarker([data.lat, data.lng], {
-        radius: 10,
-        color: color,
-        fillColor: color,
-        fillOpacity: 0.7,
-        weight: 3
+    const customIcon = L.divIcon({
+        className: 'debris-select-marker',
+        html: `
+            <div class="debris-select-marker-inner" style="background: ${color}; border-color: white; box-shadow: 0 4px 10px rgba(0,0,0,0.5); animation: none;">
+                !
+                <div class="debris-select-marker-close" onclick="window.removePermanentDebris('${data.id}', event)">×</div>
+            </div>`,
+        iconSize: [40, 40],
+        iconAnchor: [20, 20]
+    });
+
+    const marker = L.marker([data.lat, data.lng], {
+        icon: customIcon,
+        debrisId: data.id
     }).addTo(map);
 
     // Popup icerigi
@@ -578,6 +595,7 @@ async function loadExistingDebrisReports() {
             const snapshot = await db.collection('enkaz_bildirimleri').where('durum', '==', 'aktif').get();
             snapshot.forEach(doc => {
                 const data = doc.data();
+                data.id = doc.id;
                 addDebrisMarkerToMap(data);
             });
             if (snapshot.size > 0) {
@@ -593,6 +611,41 @@ async function loadExistingDebrisReports() {
         }
     } catch (error) {
         console.error('Enkaz bildirimleri yuklenirken hata:', error);
+    }
+}
+
+// ============================================
+// MARKET SİLME
+// ============================================
+
+window.removePermanentDebris = async function(id, event) {
+    if(event) event.stopPropagation();
+    if(confirm('Arama-kurtarma islemi tamamlandiysa veya bu ihbar hataliysa haritadan kaldirmak istediginize emin misiniz?')) {
+        // Haritadan kaldir
+        const idx = reportedDebrisMarkers.findIndex(m => m.options.debrisId === id);
+        if(idx !== -1) {
+            map.removeLayer(reportedDebrisMarkers[idx]);
+            reportedDebrisMarkers.splice(idx, 1);
+        }
+        
+        // Veritabanindan sil (Local vs Firebase)
+        if (id.startsWith('local_') || id.startsWith('temp_')) {
+            let saved = JSON.parse(localStorage.getItem('enkaz_bildirimleri') || '[]');
+            saved = saved.filter(item => item.id !== id);
+            localStorage.setItem('enkaz_bildirimleri', JSON.stringify(saved));
+            setStatus('Bildirim yerel veritabanindan kaldirildi.', 'success');
+        } else {
+            // Firebase REST ile sil
+            if (typeof firebaseConfig !== 'undefined' && firebaseConfig.projectId) {
+                const restUrl = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/enkaz_bildirimleri/${id}`;
+                try {
+                    await fetch(restUrl, { method: 'DELETE' });
+                    setStatus('Bildirim basariyla bulut veritabanindan kaldirildi.', 'success');
+                } catch(e) {
+                    console.error('Firebase silme hatasi:', e);
+                }
+            }
+        }
     }
 }
 

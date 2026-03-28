@@ -227,14 +227,27 @@ def calculate_route(
         for n in primary_route
     ]
 
-    # 5. Alternatif rota: Normal ağırlıklı (karşılaştırma için)
+    # 5. Gerçek Bir Alternatif Rota Bul (Ana rotadaki kenarları cezalandırarak)
+    # Önce ana rotadaki kenarların tehlike ağırlıklarını geçici olarak artıralım (örn. 5 kat)
+    # Böylece algoritma mümkünse başka bir *güvenli* yol bulmaya çalışır.
     alt_coords = None
-    alt_route = _find_path(G_active, start_node, end_node, weight="length")
-    if alt_route and alt_route != primary_route:
-        alt_coords = [
-            [G_active.nodes[n]["y"], G_active.nodes[n]["x"]]
-            for n in alt_route
-        ]
+    if len(primary_route) > 1:
+        # Ana rota kenarlarının ağırlığını artır
+        for i in range(len(primary_route) - 1):
+            u = primary_route[i]
+            v = primary_route[i+1]
+            if G_active.has_edge(u, v):
+                for k in G_active[u][v]:
+                    if "danger_weight" in G_active[u][v][k]:
+                        G_active[u][v][k]["danger_weight"] *= 5.0
+
+        alt_route = _find_path(G_active, start_node, end_node, weight="danger_weight")
+        
+        if alt_route and alt_route != primary_route:
+            alt_coords = [
+                [G_active.nodes[n]["y"], G_active.nodes[n]["x"]]
+                for n in alt_route
+            ]
 
     logger.info(
         f"✅ Rota hazır: ana={len(primary_coords)} nokta"

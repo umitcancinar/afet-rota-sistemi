@@ -186,6 +186,12 @@ def calculate_route(
     G_active = G_REGION.copy()
 
     logger.info(f"Aktif graf: {G_active.number_of_nodes()} düğüm, {G_active.number_of_edges()} kenar")
+    
+    # Rota hesaplamadan önce TÜM kenarlara temel ağırlığı (uzunluk) ata.
+    # Bu yapılmazsa enkaz olmayan durumlarda NetworkX ağırlığı 1 sayar ve rota bozulur.
+    for u, v, k, data in G_active.edges(keys=True, data=True):
+        if "danger_weight" not in data:
+            data["danger_weight"] = float(data.get("length", 100))
 
     # 2. Tehlike ağırlıkları uygula
     if debris_list:

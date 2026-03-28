@@ -408,6 +408,90 @@ document.addEventListener('DOMContentLoaded', () => {
             showDebrisMessage('Konum harita merkezi olarak ayarlandi.', 'success');
         });
     }
+
+    // "Gercek GPS (Simulasyon)" Butonu Tiklaninca
+    const gpsBtn = document.getElementById('autoGpsMapBtn');
+    if(gpsBtn) {
+        gpsBtn.addEventListener('click', () => {
+            if (!navigator.geolocation) {
+                Swal.fire('Hata', 'Tarayiciniz GPS ozelligini desteklemiyor.', 'error');
+                return;
+            }
+
+            gpsBtn.textContent = "⏳ Konum Bulunuyor...";
+            gpsBtn.disabled = true;
+
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    gpsBtn.textContent = "📡 Gercek GPS (Simulasyon)";
+                    gpsBtn.disabled = false;
+
+                    const realLat = position.coords.latitude;
+                    const realLng = position.coords.longitude;
+
+                    // Antakya Afet Bolgesi Bounding Box (Yaklasik)
+                    // Lat: 36.1 - 36.4, Lng: 36.0 - 36.3
+                    const isInsideDisasterZone = (realLat >= 36.1 && realLat <= 36.4 && realLng >= 36.0 && realLng <= 36.3);
+
+                    let targetLat, targetLng;
+
+                    if (!isInsideDisasterZone) {
+                        // Afet bolgesi disinda - Simulasyon Modu
+                        const center = map.getCenter();
+                        targetLat = center.lat;
+                        targetLng = center.lng;
+
+                        Swal.fire({
+                            title: 'Simulasyon Modu Aktif',
+                            html: `<b>Gerçek konumunuz tespit edildi:</b><br><span style="font-size:13px; color:#64748b;">(Enlem: ${realLat.toFixed(4)}, Boylam: ${realLng.toFixed(4)})</span><br><br>Sistem şu an <b>Antakya Afet Bölgesine</b> kilitli olduğu için hücresel konumunuz simülasyon amacıyla afet bölgesi merkezine yansıtılıyor.`,
+                            icon: 'info',
+                            confirmButtonText: 'Anladim',
+                            confirmButtonColor: '#3b82f6'
+                        });
+                    } else {
+                        // Afet bolgesi icinde -> gercek konumu kullan
+                        targetLat = realLat;
+                        targetLng = realLng;
+                        showDebrisMessage('Gercek konumunuz afet bolgesi icinde basariyla alindi.', 'success');
+                    }
+
+                    debrisReportLatLng = { lat: targetLat, lng: targetLng };
+                    
+                    document.getElementById('debrisReportCoords').style.display = 'block';
+                    document.getElementById('debrisReportLatLng').textContent = `Enlem: ${targetLat.toFixed(6)}, Boylam: ${targetLng.toFixed(6)}`;
+                    
+                    if (window._tempDebrisMarker) { map.removeLayer(window._tempDebrisMarker); }
+                    const iconHTML = `
+                        <div class="debris-select-marker-inner" style="background:#ef4444; border-color:white; box-shadow:0 4px 10px rgba(0,0,0,0.5);">
+                            !
+                            <div class="debris-select-marker-close" onclick="window.removeTempDebrisMarker(event)">×</div>
+                        </div>`;
+                    window._tempDebrisMarker = L.marker([targetLat, targetLng], {
+                        icon: L.divIcon({
+                            className: 'debris-select-marker',
+                            html: iconHTML,
+                            iconSize: [40, 40],
+                            iconAnchor: [20, 20]
+                        })
+                    }).addTo(map);
+                    
+                    map.flyTo([targetLat, targetLng], 17);
+                },
+                (error) => {
+                    gpsBtn.textContent = "📡 Gercek GPS (Simulasyon)";
+                    gpsBtn.disabled = false;
+                    
+                    let msg = "Bilinmeyen bir hata olustu.";
+                    if (error.code === 1) msg = "Konum erisimi reddedildi.";
+                    else if (error.code === 2) msg = "Konum bulunamadi.";
+                    else if (error.code === 3) msg = "Zaman asimi.";
+                    
+                    Swal.fire('Konum Hatasi', msg, 'error');
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        });
+    }
 });
 
 // Ozel marker'daki "X" kapatma butonuna basilinca
@@ -971,7 +1055,7 @@ async function otonomAnalizEt() {
             return {
                 lat: m.getLatLng().lat,
                 lon: m.getLatLng().lng,
-                radius: m.options.yikilma_orani === 'hafif' ? 30 : (m.options.yikilma_orani === 'orta' ? 50 : 80)
+                radius: m.options.yikilma_orani === 'hafif' ? 15 : (m.options.yikilma_orani === 'orta' ? 25 : 40)
             };
         });
         formData.append('manuel_enkazlar', JSON.stringify(activeManualDebris));
@@ -1353,7 +1437,7 @@ async function runDroneAnalysis() {
                     return {
                         lat: m.getLatLng().lat,
                         lon: m.getLatLng().lng,
-                        radius: m.options.yikilma_orani === 'hafif' ? 30 : (m.options.yikilma_orani === 'orta' ? 50 : 80)
+                        radius: m.options.yikilma_orani === 'hafif' ? 15 : (m.options.yikilma_orani === 'orta' ? 25 : 40)
                     };
                 });
                 formData.append('manuel_enkazlar', JSON.stringify(activeManualDebris));

@@ -418,25 +418,29 @@ async function submitDebrisReport(e) {
     try {
         // Firebase'e kaydet
         if (db) {
+            // 'add' promisesini bekle, ama eger 5sn'den uzun surerse 'timeout_fallback' don
             const firestorePromise = db.collection('enkaz_bildirimleri').add(reportData);
-            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000));
+            const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve('timeout_fallback'), 5000));
             
             try {
-                await Promise.race([firestorePromise, timeoutPromise]);
-                showDebrisMessage('Enkaz bildirimi basariyla kaydedildi!', 'success');
-            } catch (err) {
-                if (err.message === 'timeout' || String(err).includes('offline')) {
+                const result = await Promise.race([firestorePromise, timeoutPromise]);
+                if (result === 'timeout_fallback') {
                     console.warn('Firebase yanit vermedi. Bildiri yerel olarak kaydediliyor...');
                     saveDebrisLocalFallback(reportData);
                     showDebrisMessage('Sunucu yanit vermedi. Bildiri yerel olarak kaydedildi.', 'success');
                 } else {
-                    throw err;
+                    showDebrisMessage('Enkaz bildirimi basariyla kaydedildi!', 'success');
                 }
+            } catch (err) {
+                // Eger yetki hatasi (Missing permissions) veya offline hatasi verirse buraya duser
+                console.warn('Firebase kayit hatasi: ', err.message);
+                saveDebrisLocalFallback(reportData);
+                showDebrisMessage('Ag/Yetki hatasi. Bildiri yerel olarak kaydedildi.', 'success');
             }
         } else {
             // Firebase yoksa localStorage'a kaydet (fallback)
             saveDebrisLocalFallback(reportData);
-            showDebrisMessage('Bildiri yerel olarak kaydedildi. (Firebase yapilandirilmamis)', 'success');
+            showDebrisMessage('Bildiri yerel olarak kaydedildi. (Firebase kapali)', 'success');
         }
 
         // Gecici marker'i kaldir
@@ -450,15 +454,15 @@ async function submitDebrisReport(e) {
 
         // Modu kapat
         setTimeout(() => {
-            debrisReportMode = false;
             debrisReportLatLng = null;
             closeModal(debrisReportModal);
-            setStatus('Enkaz bildirimi kaydedildi.', 'success');
+            setStatus('Enkaz bildirimi eklendi.', 'success');
         }, 1500);
 
     } catch (error) {
-        console.error('Enkaz bildirimi gonderilemedi:', error);
-        showDebrisMessage('Gonderim hatasi: ' + error.message, 'error');
+        // Bu sadece en distaki odengunemeyen hatalar icin
+        console.error('Enkaz bildirimi islenemedi:', error);
+        showDebrisMessage('Kritik sistem hatasi.', 'error');
     } finally {
         submitBtn.disabled = false;
     }

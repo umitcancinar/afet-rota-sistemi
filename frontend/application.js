@@ -1,7 +1,7 @@
 /**
  * Afet Rota Sistemi — Frontend Controller
  * ========================================
- * Harita etkileşimi, koordinat girişi, görüntü analiz ve sonuç görselleştirme.
+ * Harita etkilesimi, koordinat girisi, goruntu analiz ve sonuc gorsellestirme.
  */
 
 // === CONFIG ===
@@ -53,22 +53,179 @@ const showPanelBtn = document.getElementById('showPanelBtn');
 const droneFileInput = document.getElementById('droneFileInput');
 const droneModeOverlay = document.getElementById('droneModeOverlay');
 const droneCanvas = document.getElementById('droneCanvas');
-let droneCtx = null; // Daha sonra set edilecek
+let droneCtx = null;
 const droneAnalyzeBtn = document.getElementById('droneAnalyzeBtn');
 const droneCloseBtn = document.getElementById('droneCloseBtn');
 const droneInstruction = document.getElementById('droneInstruction');
 
 let droneImageObj = null;
-let dronePoints = { A: null, B: null }; 
+let dronePoints = { A: null, B: null };
 let isDroneAnalyzing = false;
 
-// === MAP INIT ===
+// === THEME TOGGLE ELEMENTS ===
+const themeToggleBtn = document.getElementById('themeToggleBtn');
+
+// === MODAL ELEMENTS ===
+const earthquakeBtn = document.getElementById('earthquakeBtn');
+const emergencyBtn = document.getElementById('emergencyBtn');
+const earthquakeModal = document.getElementById('earthquakeModal');
+const emergencyModal = document.getElementById('emergencyModal');
+const earthquakeModalClose = document.getElementById('earthquakeModalClose');
+const emergencyModalClose = document.getElementById('emergencyModalClose');
+
+// ============================================
+// THEME MANAGEMENT
+// ============================================
+
+function initTheme() {
+    const savedTheme = localStorage.getItem('afet-rota-theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+}
+
+function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('afet-rota-theme', next);
+}
+
+// Apply theme immediately (before DOMContentLoaded)
+initTheme();
+
+// ============================================
+// EARTHQUAKE DATA (Kandilli Rasathanesi)
+// ============================================
+
+const EARTHQUAKE_API = 'https://api.orhanaydogdu.com.tr/deprem/kandilli/live';
+
+async function fetchEarthquakes() {
+    const content = document.getElementById('earthquakeListContent');
+    content.innerHTML = '<div class="eq-loading"><div class="spinner"></div>Deprem verileri yukleniyor...</div>';
+
+    try {
+        const response = await fetch(EARTHQUAKE_API);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const data = await response.json();
+        const quakes = data.result || [];
+
+        if (quakes.length === 0) {
+            content.innerHTML = '<div class="eq-loading">Kayitli deprem verisi bulunamadi.</div>';
+            return;
+        }
+
+        // Son 50 depremi goster
+        const items = quakes.slice(0, 50);
+        let html = '<div class="earthquake-list">';
+
+        items.forEach(q => {
+            const mag = parseFloat(q.mag) || 0;
+            let magClass = 'mag-low';
+            if (mag >= 5) magClass = 'mag-critical';
+            else if (mag >= 4) magClass = 'mag-high';
+            else if (mag >= 3) magClass = 'mag-mid';
+
+            const location = q.title || q.lokasyon || 'Bilinmiyor';
+            const depth = q.depth || '-';
+            const date = q.date || '';
+            
+            // Saat bilgisini ayikla
+            let timeStr = '';
+            if (date) {
+                const d = new Date(date);
+                if (!isNaN(d.getTime())) {
+                    timeStr = d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+                } else {
+                    timeStr = date.split(' ').pop() || '';
+                }
+            }
+
+            html += `
+                <div class="earthquake-item">
+                    <div class="eq-magnitude ${magClass}">${mag.toFixed(1)}</div>
+                    <div class="eq-info">
+                        <div class="eq-location">${location}</div>
+                        <div class="eq-details">
+                            <span>Derinlik: ${depth} km</span>
+                        </div>
+                    </div>
+                    <div class="eq-time">${timeStr}</div>
+                </div>
+            `;
+        });
+
+        html += '</div>';
+        content.innerHTML = html;
+
+    } catch (error) {
+        console.error('Deprem verisi alinirken hata:', error);
+        content.innerHTML = '<div class="eq-error">Deprem verileri yuklenemedi. Lutfen daha sonra tekrar deneyin.</div>';
+    }
+}
+
+// ============================================
+// EMERGENCY NUMBERS
+// ============================================
+
+const EMERGENCY_NUMBERS = [
+    { number: '112', name: 'Acil Yardim', desc: 'Ambulans, itfaiye, polis (Genel acil cagri)' },
+    { number: '110', name: 'Itfaiye', desc: 'Yangin ihbar ve kurtarma' },
+    { number: '155', name: 'Polis Imdat', desc: 'Asayis ve guvenlik olaylari' },
+    { number: '156', name: 'Jandarma Imdat', desc: 'Kirsal alan guvenlik olaylari' },
+    { number: '122', name: 'AFAD', desc: 'Afet ve acil durum koordinasyonu' },
+    { number: '104', name: 'Sağlık Danışma', desc: 'Saglik danisma hatti' },
+    { number: '182', name: 'Alo Valilik', desc: 'Valilik bilgi ve sikayet hatti' },
+    { number: '183', name: 'Alo Sosyal Destek', desc: 'Aile ve sosyal hizmetler' },
+    { number: '153', name: 'Belediye Zabita', desc: 'Belediye zabita ihbar hatti' },
+    { number: '186', name: 'Tuketici Sikayet', desc: 'Tuketici haklari ve sikayetler' },
+    { number: '181', name: 'Kizilay', desc: 'Turk Kizilayi yardim hatti' },
+    { number: '185', name: 'Alo Gida', desc: 'Gida guvenligi ihbar hatti' },
+];
+
+function renderEmergencyNumbers() {
+    const content = document.getElementById('emergencyListContent');
+    let html = '';
+
+    EMERGENCY_NUMBERS.forEach(item => {
+        html += `
+            <div class="emergency-item">
+                <div class="emergency-number">${item.number}</div>
+                <div class="emergency-info">
+                    <div class="emergency-name">${item.name}</div>
+                    <div class="emergency-desc">${item.desc}</div>
+                </div>
+            </div>
+        `;
+    });
+
+    content.innerHTML = html;
+}
+
+// ============================================
+// MODAL MANAGEMENT
+// ============================================
+
+function openModal(modal) {
+    modal.classList.add('active');
+}
+
+function closeModal(modal) {
+    modal.classList.remove('active');
+}
+
+// ============================================
+// MAP INIT
+// ============================================
+
 function initMap() {
     map = L.map('map', {
         preferCanvas: true,
         maxZoom: 22,
-        zoomControl: true
+        zoomControl: false  // Default zoom kontrolunu devre disi birak
     }).setView(MAP_CENTER, MAP_ZOOM);
+
+    // Zoom kontrolunu sag alt koseye tasi
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
 
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
         attribution: 'Maxar | Esri',
@@ -77,7 +234,7 @@ function initMap() {
         crossOrigin: ''
     }).addTo(map);
 
-    // Harita tıklama — A ve B noktası seç
+    // Harita tiklama — A ve B noktasi sec
     map.on('click', onMapClick);
 }
 
@@ -86,26 +243,26 @@ function onMapClick(e) {
 
     if (!markers.A) {
         setMarker('A', e.latlng.lat, e.latlng.lng);
-        setStatus('A noktası seçildi. Şimdi hedef (B) noktasını seç.', 'info');
+        setStatus('A noktasi secildi. Simdi hedef (B) noktasini sec.', 'info');
     } else if (!markers.B) {
         setMarker('B', e.latlng.lat, e.latlng.lng);
-        setStatus('A ve B hazır! "Analiz Başlat" ile yapay zekayı ateşle.', 'info');
+        setStatus('A ve B hazir! "Analiz Baslat" ile yapay zekayi atesle.', 'info');
     }
 }
 
 /**
- * Marker oluşturur veya günceller ve input alanlarını senkronize eder.
+ * Marker olusturur veya gunceller ve input alanlarini senkronize eder.
  */
 function setMarker(point, lat, lng) {
     const color = point === 'A' ? '#3b82f6' : '#ef4444';
-    const label = point === 'A' ? '📍 Başlangıç (A)' : '🎯 Hedef (B)';
+    const label = point === 'A' ? 'Baslangic (A)' : 'Hedef (B)';
 
-    // Mevcut marker'ı kaldır
+    // Mevcut marker'i kaldir
     if (markers[point]) {
         map.removeLayer(markers[point]);
     }
 
-    // Yeni marker oluştur
+    // Yeni marker olustur
     markers[point] = L.marker([lat, lng], {
         draggable: true,
         icon: createMarkerIcon(point, color)
@@ -113,21 +270,21 @@ function setMarker(point, lat, lng) {
 
     markers[point].bindPopup(`<b>${label}</b>`).openPopup();
 
-    // Drag event — marker sürüklenince input'ları güncelle
+    // Drag event — marker suruklenince input'lari guncelle
     markers[point].on('dragend', function (e) {
         const pos = e.target.getLatLng();
         updateCoordInputs(point, pos.lat, pos.lng);
     });
 
-    // Input alanlarını güncelle
+    // Input alanlarini guncelle
     updateCoordInputs(point, lat, lng);
 
-    // Haritayı bu noktaya pan et
+    // Haritayi bu noktaya pan et
     map.panTo([lat, lng]);
 }
 
 /**
- * Koordinat input alanlarını günceller.
+ * Koordinat input alanlarini gunceller.
  */
 function updateCoordInputs(point, lat, lng) {
     if (point === 'A') {
@@ -140,7 +297,7 @@ function updateCoordInputs(point, lat, lng) {
 }
 
 /**
- * Input alanlarından koordinat okuyup marker uygular.
+ * Input alanlarindan koordinat okuyup marker uygular.
  */
 function applyCoordinate(point) {
     const latInput = point === 'A' ? coordALat : coordBLat;
@@ -150,29 +307,29 @@ function applyCoordinate(point) {
     const lon = parseFloat(lonInput.value);
 
     if (isNaN(lat) || isNaN(lon)) {
-        setStatus(`❌ Geçersiz koordinat! Enlem ve boylam sayısal değer olmalıdır.`, 'error');
+        setStatus('Gecersiz koordinat! Enlem ve boylam sayisal deger olmalidir.', 'error');
         return;
     }
 
     if (lat < -90 || lat > 90) {
-        setStatus(`❌ Enlem -90 ile 90 arasında olmalıdır.`, 'error');
+        setStatus('Enlem -90 ile 90 arasinda olmalidir.', 'error');
         return;
     }
 
     if (lon < -180 || lon > 180) {
-        setStatus(`❌ Boylam -180 ile 180 arasında olmalıdır.`, 'error');
+        setStatus('Boylam -180 ile 180 arasinda olmalidir.', 'error');
         return;
     }
 
     setMarker(point, lat, lon);
 
-    const pointLabel = point === 'A' ? 'Başlangıç (A)' : 'Hedef (B)';
-    setStatus(`✅ ${pointLabel} noktası ayarlandı: ${lat.toFixed(6)}, ${lon.toFixed(6)}`, 'info');
+    const pointLabel = point === 'A' ? 'Baslangic (A)' : 'Hedef (B)';
+    setStatus(`${pointLabel} noktasi ayarlandi: ${lat.toFixed(6)}, ${lon.toFixed(6)}`, 'info');
 
-    // Her iki nokta da seçildiyse bilgilendir
+    // Her iki nokta da secildiyse bilgilendir
     if (markers.A && markers.B) {
         setTimeout(() => {
-            setStatus('A ve B hazır! "Analiz Başlat" ile yapay zekayı ateşle.', 'info');
+            setStatus('A ve B hazir! "Analiz Baslat" ile yapay zekayi atesle.', 'info');
         }, 1500);
     }
 }
@@ -195,10 +352,10 @@ function createMarkerIcon(label, color) {
     });
 }
 
-// === ANALİZ ===
+// === ANALIZ ===
 async function otonomAnalizEt() {
     if (!markers.A || !markers.B) {
-        setStatus('Önce haritada A ve B noktalarını seç!', 'error');
+        setStatus('Once haritada A ve B noktalarini sec!', 'error');
         return;
     }
     if (isAnalyzing) return;
@@ -209,15 +366,15 @@ async function otonomAnalizEt() {
     showProgress(true);
 
     try {
-        // Adım 1: Ekran yakalama
+        // Adim 1: Ekran yakalama
         setStep('capture');
-        setStatus('📸 Harita görüntüsü yakalanıyor...', 'loading');
+        setStatus('Harita goruntusu yakalaniyor...', 'loading');
 
         const bounds = map.getBounds();
         const nw = bounds.getNorthWest();
         const se = bounds.getSouthEast();
 
-        // Yüksek kaliteli ekran yakalama
+        // Yuksek kaliteli ekran yakalama
         const scale = Math.min(window.devicePixelRatio || 1, 2);
         const canvas = await html2canvas(document.getElementById('map'), {
             useCORS: true,
@@ -227,9 +384,9 @@ async function otonomAnalizEt() {
             removeContainer: true
         });
 
-        // Adım 2: AI Analiz
+        // Adim 2: AI Analiz
         setStep('ai');
-        setStatus('🧠 Yapay zeka görüntüyü analiz ediyor...', 'loading');
+        setStatus('Yapay zeka goruntuyu analiz ediyor...', 'loading');
 
         const blob = await new Promise(resolve => {
             canvas.toBlob(resolve, 'image/png', 1.0);
@@ -246,9 +403,9 @@ async function otonomAnalizEt() {
         formData.append('hedef_lat', markers.B.getLatLng().lat);
         formData.append('hedef_lon', markers.B.getLatLng().lng);
 
-        // Adım 3: Rota hesaplama (sunucu tarafında)
+        // Adim 3: Rota hesaplama (sunucu tarafinda)
         setStep('route');
-        setStatus('🗺️ Güvenli rota hesaplanıyor...', 'loading');
+        setStatus('Guvenli rota hesaplaniyor...', 'loading');
 
         const response = await fetch(`${API_URL}/api/otonom-analiz`, {
             method: 'POST',
@@ -256,27 +413,27 @@ async function otonomAnalizEt() {
         });
 
         if (!response.ok) {
-            throw new Error(`Sunucu hatası: ${response.status}`);
+            throw new Error(`Sunucu hatasi: ${response.status}`);
         }
 
         const res = await response.json();
 
         if (res.durum === 'basarili') {
-            // Adım 4: Tamamlandı
+            // Adim 4: Tamamlandi
             setStep('done');
             drawResults(res);
             showStats(res);
             setStatus(
-                `✅ <b>${res.tespit_sayisi}</b> enkaz tespit edildi. Güvenli rota hazır!`,
+                `<b>${res.tespit_sayisi}</b> enkaz tespit edildi. Guvenli rota hazir!`,
                 'success'
             );
         } else {
-            setStatus(`❌ ${res.mesaj || 'Bilinmeyen hata'}`, 'error');
+            setStatus(`${res.mesaj || 'Bilinmeyen hata'}`, 'error');
         }
 
     } catch (e) {
-        console.error('Analiz hatası:', e);
-        setStatus(`❌ Bağlantı hatası: Sunucu çalışıyor mu? (${e.message})`, 'error');
+        console.error('Analiz hatasi:', e);
+        setStatus(`Baglanti hatasi: Sunucu calisiyor mu? (${e.message})`, 'error');
     } finally {
         isAnalyzing = false;
         analizBtn.disabled = false;
@@ -285,15 +442,15 @@ async function otonomAnalizEt() {
 
 
 
-// === SONUÇ ÇİZİMİ ===
+// === SONUC CIZIMI ===
 function drawResults(res) {
-    // Tehlike bölgelerini çiz
+    // Tehlike bolgelerini ciz
     if (res.enkazlar) {
         res.enkazlar.forEach(enkaz => {
             const coord = [enkaz.lat, enkaz.lon];
             const radius = enkaz.tehlike_yaricapi_m || 50;
 
-            // Tehlike yarıçapı — yarı şeffaf kırmızı daire
+            // Tehlike yaricapi — yari seffaf kirmizi daire
             const dangerZone = L.circle(coord, {
                 radius: radius,
                 color: '#ef4444',
@@ -304,12 +461,11 @@ function drawResults(res) {
             }).addTo(map);
             dangerZoneLayers.push(dangerZone);
 
-            // Enkaz noktası — küçük dolu daire (riske göre renk)
+            // Enkaz noktasi — kucuk dolu daire (riske gore renk)
             const confidencePercent = Math.round((enkaz.confidence || 0) * 100);
             const riskScore = enkaz.risk_score || 0.2;
             const riskPercent = Math.round(riskScore * 100);
-            const riskEmoji = riskScore >= 0.9 ? '🔴' : riskScore >= 0.5 ? '🟠' : '🟢';
-            const riskLabel = riskScore >= 0.9 ? 'KRİTİK' : riskScore >= 0.5 ? 'ORTA' : 'DÜŞÜK';
+            const riskLabel = riskScore >= 0.9 ? 'KRITIK' : riskScore >= 0.5 ? 'ORTA' : 'DUSUK';
             const markerColor = riskScore >= 0.9 ? '#dc2626' : riskScore >= 0.5 ? '#f97316' : '#22c55e';
             const markerFill = riskScore >= 0.9 ? '#f87171' : riskScore >= 0.5 ? '#fdba74' : '#86efac';
 
@@ -322,11 +478,11 @@ function drawResults(res) {
             }).addTo(map);
             marker.bindPopup(
                 `<div style="font-family:Inter,sans-serif;font-size:13px;">
-                    <b>🚨 Enkaz Tespiti</b><br>
-                    Sınıf: ${enkaz.sinif || 'debris'}<br>
-                    Güven: %${confidencePercent}<br>
-                    Tehlike Yarıçapı: ${radius}m<br>
-                    ${riskEmoji} Risk: %${riskPercent} (${riskLabel})
+                    <b>Enkaz Tespiti</b><br>
+                    Sinif: ${enkaz.sinif || 'debris'}<br>
+                    Guven: %${confidencePercent}<br>
+                    Tehlike Yaricapi: ${radius}m<br>
+                    Risk: %${riskPercent} (${riskLabel})
                 </div>`
             );
             enkazLayers.push(marker);
@@ -344,7 +500,7 @@ function drawResults(res) {
         }).addTo(map);
     }
 
-    // Ana güvenli rota (kalın, turuncu→yeşil gradient etkisi)
+    // Ana guvenli rota (kalin, turuncu to yesil gradient etkisi)
     if (res.guvenli_rota && res.guvenli_rota.length > 1) {
         // Glow efekti
         const glow = L.polyline(res.guvenli_rota, {
@@ -356,7 +512,7 @@ function drawResults(res) {
         }).addTo(map);
         enkazLayers.push(glow);
 
-        // Ana çizgi
+        // Ana cizgi
         routeLayer = L.polyline(res.guvenli_rota, {
             color: '#f97316',
             weight: 6,
@@ -366,7 +522,7 @@ function drawResults(res) {
         }).addTo(map);
     }
 
-    // Legend göster
+    // Legend goster
     legendPanel.classList.add('visible');
 }
 
@@ -384,6 +540,15 @@ function showProgress(show) {
     // Reset steps
     [stepCapture, stepAI, stepRoute, stepDone].forEach(s => {
         s.className = 'progress-step';
+        // Reset step icon to number
+    });
+    resetStepIcons();
+}
+
+function resetStepIcons() {
+    const steps = [stepCapture, stepAI, stepRoute, stepDone];
+    steps.forEach((s, i) => {
+        s.querySelector('.step-icon').textContent = (i + 1).toString();
     });
 }
 
@@ -395,7 +560,7 @@ function setStep(step) {
     elements.forEach((el, i) => {
         if (i < currentIdx) {
             el.className = 'progress-step done';
-            el.querySelector('.step-icon').textContent = '✓';
+            el.querySelector('.step-icon').textContent = '\u2713';
         } else if (i === currentIdx) {
             el.className = 'progress-step active';
         } else {
@@ -427,13 +592,13 @@ function resetAll() {
     if (markers.A) { map.removeLayer(markers.A); markers.A = null; }
     if (markers.B) { map.removeLayer(markers.B); markers.B = null; }
 
-    // Koordinat inputlarını temizle
+    // Koordinat inputlarini temizle
     coordALat.value = '';
     coordALon.value = '';
     coordBLat.value = '';
     coordBLon.value = '';
 
-    // Drone modunu sıfırla
+    // Drone modunu sifirla
     if (droneCtx && droneCanvas) {
         droneCtx.clearRect(0, 0, droneCanvas.width, droneCanvas.height);
     }
@@ -441,64 +606,61 @@ function resetAll() {
     droneImageObj = null;
     droneFileInput.value = '';
     droneAnalyzeBtn.disabled = true;
-    droneInstruction.textContent = "1. Başlangıç noktasını (A) seçmek için görsele tıklayın.";
+    droneInstruction.textContent = "1. Baslangic noktasini (A) secmek icin gorsele tiklayin.";
 
-    setStatus('Sistem hazır. Haritada A ve B noktalarını seç veya koordinat gir.', 'info');
+    setStatus('Sistem hazir. Haritada A ve B noktalarini sec veya koordinat gir.', 'info');
 }
 
 // === DRONE MODU LOGIC ===
 
 function openDroneMode(file) {
     if (!file) {
-        alert("Hata: Dosya alınamadı!");
+        alert("Hata: Dosya alinamadi!");
         return;
     }
     
-    // Görüntüyü oku ve Canvas'a at
+    // Goruntuyu oku ve Canvas'a at
     const reader = new FileReader();
-    reader.onerror = function() { alert("Dosya okuma hatası!"); };
+    reader.onerror = function() { alert("Dosya okuma hatasi!"); };
     reader.onload = function(e) {
         const img = new Image();
-        img.onerror = function() { alert("Resim yükleme hatası!"); };
+        img.onerror = function() { alert("Resim yukleme hatasi!"); };
         img.onload = function() {
             droneImageObj = img;
             
-            // İç çözünürlük: Resmin gerçek piksel boyutları
+            // Ic cozunurluk: Resmin gercek piksel boyutlari
             droneCanvas.width = img.width;
             droneCanvas.height = img.height;
             
-            // TAM EKRAN: Canvas'ı konteynerin tamamına yay
-            // İç çözünürlük korunur, CSS ile scale edilir
+            // TAM EKRAN: Canvas'i konteynerin tamamina yay
             const container = document.getElementById('droneCanvasContainer');
-            const containerH = container.clientHeight - 30; // padding çıkar
+            const containerH = container.clientHeight - 30;
             const containerW = container.clientWidth - 30;
             
             const imgAspect = img.width / img.height;
             const containerAspect = containerW / containerH;
             
             if (imgAspect > containerAspect) {
-                // Yatay fotoğraf — genişliğe sığdır
                 droneCanvas.style.width = '100%';
                 droneCanvas.style.height = 'auto';
             } else {
-                // Dikey fotoğraf — yüksekliğe sığdır
                 droneCanvas.style.height = '100%';
                 droneCanvas.style.width = 'auto';
             }
             
-            // Context al (Her seferinde taze)
+            // Context al
             droneCtx = droneCanvas.getContext('2d', { alpha: false });
             droneCtx.imageSmoothingEnabled = true;
             droneCtx.imageSmoothingQuality = 'high';
             
-            // Resmi çiz
+            // Resmi ciz
             droneCtx.drawImage(img, 0, 0);
             
             // UI ayarla
             document.getElementById('droneWorkspaceEmpty').style.display = 'none';
             container.style.display = 'flex';
             dronePoints = { A: null, B: null };
-            droneInstruction.textContent = "1. Başlangıç noktasını (A) seçmek için görsele tıklayın.";
+            droneInstruction.textContent = "1. Baslangic noktasini (A) secmek icin gorsele tiklayin.";
             droneAnalyzeBtn.disabled = true;
         }
         img.src = e.target.result;
@@ -510,10 +672,10 @@ function closeDroneMode() {
     droneModeOverlay.style.display = 'none';
     document.getElementById('droneWorkspaceEmpty').style.display = 'flex';
     document.getElementById('droneCanvasContainer').style.display = 'none';
-    droneFileInput.value = ''; // Yeni seçime izin ver
+    droneFileInput.value = '';
 }
 
-// Piksel koordinatını GPS'e çevir (Frontend tarafı)
+// Piksel koordinatini GPS'e cevir
 function pixelToGps(px, py) {
     const nwLat = parseFloat(document.getElementById('droneNWLat').value);
     const nwLon = parseFloat(document.getElementById('droneNWLon').value);
@@ -530,18 +692,14 @@ function pixelToGps(px, py) {
 function redrawDroneCanvas() {
     if (!droneImageObj) return;
     
-    // Temizle ve resmi yeniden çiz
     droneCtx.clearRect(0, 0, droneCanvas.width, droneCanvas.height);
     droneCtx.drawImage(droneImageObj, 0, 0);
     
-    // A noktasını çiz
     if (dronePoints.A) drawDroneMarker(dronePoints.A.x, dronePoints.A.y, 'A', '#3b82f6');
-    // B noktasını çiz
     if (dronePoints.B) drawDroneMarker(dronePoints.B.x, dronePoints.B.y, 'B', '#ef4444');
 }
 
 function drawDroneMarker(x, y, label, color) {
-    // Dış Halka
     droneCtx.beginPath();
     droneCtx.arc(x, y, 15, 0, 2 * Math.PI);
     droneCtx.fillStyle = color;
@@ -550,7 +708,6 @@ function drawDroneMarker(x, y, label, color) {
     droneCtx.strokeStyle = '#ffffff';
     droneCtx.stroke();
     
-    // İç Metin
     droneCtx.fillStyle = '#ffffff';
     droneCtx.font = 'bold 16px Arial';
     droneCtx.textAlign = 'center';
@@ -561,7 +718,6 @@ function drawDroneMarker(x, y, label, color) {
 droneCanvas.addEventListener('click', (e) => {
     if (isDroneAnalyzing) return;
     
-    // Tıklanan piksel koordinatını hesapla (CSS scale vs hesaba katarak)
     const rect = droneCanvas.getBoundingClientRect();
     const scaleX = droneCanvas.width / rect.width;
     const scaleY = droneCanvas.height / rect.height;
@@ -571,16 +727,15 @@ droneCanvas.addEventListener('click', (e) => {
     
     if (!dronePoints.A) {
         dronePoints.A = { x, y };
-        droneInstruction.textContent = "2. Hedef noktasını (B) seçin.";
+        droneInstruction.textContent = "2. Hedef noktasini (B) secin.";
     } else if (!dronePoints.B) {
         dronePoints.B = { x, y };
-        droneInstruction.textContent = "3. Noktalar seçildi. Analizi başlatabilirsiniz.";
+        droneInstruction.textContent = "3. Noktalar secildi. Analizi baslatabilirsiniz.";
         droneAnalyzeBtn.disabled = false;
     } else {
-        // İkisi de varsa, sıfırlayıp baştan A ata
         dronePoints.A = { x, y };
         dronePoints.B = null;
-        droneInstruction.textContent = "2. Hedef noktasını (B) seçin.";
+        droneInstruction.textContent = "2. Hedef noktasini (B) secin.";
         droneAnalyzeBtn.disabled = true;
     }
     
@@ -590,33 +745,30 @@ droneCanvas.addEventListener('click', (e) => {
 async function runDroneAnalysis() {
     if (!droneImageObj || !dronePoints.A || !dronePoints.B) return;
     
-    // GPS sınırlarını kontrol et
     const nwLat = parseFloat(document.getElementById('droneNWLat').value);
     const nwLon = parseFloat(document.getElementById('droneNWLon').value);
     const seLat = parseFloat(document.getElementById('droneSELat').value);
     const seLon = parseFloat(document.getElementById('droneSELon').value);
     
     if (isNaN(nwLat) || isNaN(nwLon) || isNaN(seLat) || isNaN(seLon)) {
-        droneInstruction.textContent = "❌ Hata: GPS koordinatlarını doldurun (NW ve SE köşeler).";
+        droneInstruction.textContent = "Hata: GPS koordinatlarini doldurun (NW ve SE koseler).";
         return;
     }
     
-    // A ve B'nin GPS karşılıklarını hesapla
     const gpsA = pixelToGps(dronePoints.A.x, dronePoints.A.y);
     const gpsB = pixelToGps(dronePoints.B.x, dronePoints.B.y);
     
     if (!gpsA || !gpsB) {
-        droneInstruction.textContent = "❌ Hata: GPS dönüşümü yapılamadı.";
+        droneInstruction.textContent = "Hata: GPS donusumu yapilamadi.";
         return;
     }
     
     isDroneAnalyzing = true;
     droneAnalyzeBtn.disabled = true;
     droneCloseBtn.disabled = true;
-    droneInstruction.textContent = "⏳ SAHI analizi + rota hesaplama... (Gerçek sokak ağı kullanılıyor)";
+    droneInstruction.textContent = "SAHI analizi + rota hesaplama... (Gercek sokak agi kullaniliyor)";
     
     try {
-        // Orijinal resimden yüksek kalite blob oluştur
         droneCanvas.toBlob(async (blob) => {
             try {
                 const formData = new FormData();
@@ -640,14 +792,14 @@ async function runDroneAnalysis() {
                 const res = await response.json();
                 
                 if (res.durum === 'basarili') {
-                    droneInstruction.textContent = `✅ ${res.tespit_sayisi} enkaz bulundu. Gerçek lokak rotası çizildi!`;
+                    droneInstruction.textContent = `${res.tespit_sayisi} enkaz bulundu. Gercek sokak rotasi cizildi!`;
                     drawDroneResults(res.engeller, res.rota, res.rota_alt);
                 } else {
-                    droneInstruction.textContent = `❌ Hata: ${res.mesaj}`;
+                    droneInstruction.textContent = `Hata: ${res.mesaj}`;
                 }
             } catch (innerErr) {
-                console.error("Drone analiz hatası (iç):", innerErr);
-                droneInstruction.textContent = `❌ Başarısız: ${innerErr.message}`;
+                console.error("Drone analiz hatasi (ic):", innerErr);
+                droneInstruction.textContent = `Basarisiz: ${innerErr.message}`;
             } finally {
                 isDroneAnalyzing = false;
                 droneCloseBtn.disabled = false;
@@ -655,24 +807,22 @@ async function runDroneAnalysis() {
         }, 'image/jpeg', 0.95);
         
     } catch (e) {
-        console.error("Drone analiz hatası:", e);
-        droneInstruction.textContent = `❌ Başarısız: Sunucu bağlantı hatası.`;
+        console.error("Drone analiz hatasi:", e);
+        droneInstruction.textContent = "Basarisiz: Sunucu baglanti hatasi.";
         isDroneAnalyzing = false;
         droneCloseBtn.disabled = false;
     }
 }
 
 function drawDroneResults(engeller, rota, rotaAlt) {
-    redrawDroneCanvas(); // Resmi ve markerları temizce çiz
+    redrawDroneCanvas();
     
-    // Engelleri kutu olarak çiz
     engeller.forEach(enc => {
         const halfW = enc.w / 2;
         const halfH = enc.h / 2;
         const x = enc.x - halfW;
         const y = enc.y - halfH;
         
-        // Risk rengine göre dolgu ve çerçeve
         droneCtx.lineWidth = 3;
         droneCtx.strokeStyle = enc.risk_score >= 0.9 ? '#ef4444' : 
                               enc.risk_score >= 0.5 ? '#f97316' : '#22c55e';
@@ -685,13 +835,11 @@ function drawDroneResults(engeller, rota, rotaAlt) {
         droneCtx.fill();
         droneCtx.stroke();
         
-        // Enkaz etiketi
         droneCtx.fillStyle = '#fff';
         droneCtx.font = 'bold 12px Arial';
         droneCtx.fillText(`${enc.sinif} %${Math.round(enc.confidence * 100)}`, x + 4, y - 4);
     });
     
-    // Alternatif rotayı çiz (mavi, kesikli)
     if (rotaAlt && rotaAlt.length > 1) {
         droneCtx.beginPath();
         droneCtx.moveTo(rotaAlt[0][0], rotaAlt[0][1]);
@@ -707,7 +855,6 @@ function drawDroneResults(engeller, rota, rotaAlt) {
         droneCtx.setLineDash([]);
     }
     
-    // Ana rotayı çiz (turuncu, düz)
     if (rota && rota.length > 1) {
         // Glow efekti
         droneCtx.beginPath();
@@ -721,7 +868,7 @@ function drawDroneResults(engeller, rota, rotaAlt) {
         droneCtx.lineJoin = 'round';
         droneCtx.stroke();
         
-        // Ana çizgi
+        // Ana cizgi
         droneCtx.beginPath();
         droneCtx.moveTo(rota[0][0], rota[0][1]);
         for (let i = 1; i < rota.length; i++) {
@@ -731,13 +878,13 @@ function drawDroneResults(engeller, rota, rotaAlt) {
         droneCtx.lineWidth = 5;
         droneCtx.stroke();
         
-        // İnce sarı merkez çizgisi
+        // Ince sari merkez cizgisi
         droneCtx.strokeStyle = '#fef08a';
         droneCtx.lineWidth = 1.5;
         droneCtx.stroke();
     }
     
-    // A ve B'yi en üste tekrar çiz
+    // A ve B'yi en uste tekrar ciz
     if (dronePoints.A) drawDroneMarker(dronePoints.A.x, dronePoints.A.y, 'A', '#3b82f6');
     if (dronePoints.B) drawDroneMarker(dronePoints.B.x, dronePoints.B.y, 'B', '#ef4444');
 }
@@ -746,10 +893,33 @@ function drawDroneResults(engeller, rota, rotaAlt) {
 document.addEventListener('DOMContentLoaded', () => {
     initMap();
 
-    // Ana analiz ve sıfırlama butonları
+    // Ana analiz ve sifirlama butonlari
     analizBtn.addEventListener('click', otonomAnalizEt);
     resetBtn.addEventListener('click', resetAll);
     
+    // Theme toggle
+    themeToggleBtn.addEventListener('click', toggleTheme);
+
+    // Deprem modal
+    earthquakeBtn.addEventListener('click', () => {
+        openModal(earthquakeModal);
+        fetchEarthquakes();
+    });
+    earthquakeModalClose.addEventListener('click', () => closeModal(earthquakeModal));
+    earthquakeModal.addEventListener('click', (e) => {
+        if (e.target === earthquakeModal) closeModal(earthquakeModal);
+    });
+
+    // Acil durum modal
+    emergencyBtn.addEventListener('click', () => {
+        openModal(emergencyModal);
+        renderEmergencyNumbers();
+    });
+    emergencyModalClose.addEventListener('click', () => closeModal(emergencyModal));
+    emergencyModal.addEventListener('click', (e) => {
+        if (e.target === emergencyModal) closeModal(emergencyModal);
+    });
+
     // Drone Modu Eventleri
     const openDroneWorkspaceBtn = document.getElementById('openDroneWorkspaceBtn');
     if (openDroneWorkspaceBtn) {
@@ -760,7 +930,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('droneCanvasContainer').style.display = 'none';
             droneFileInput.value = '';
             
-            // GPS alanlarını ana haritanın mevcut viewport'u ile doldur
+            // GPS alanlarini ana haritanin mevcut viewport'u ile doldur
             if (map) {
                 const bounds = map.getBounds();
                 const nw = bounds.getNorthWest();
@@ -782,11 +952,11 @@ document.addEventListener('DOMContentLoaded', () => {
     droneCloseBtn.addEventListener('click', closeDroneMode);
     droneAnalyzeBtn.addEventListener('click', runDroneAnalysis);
 
-    // Koordinat uygulama butonları
+    // Koordinat uygulama butonlari
     applyABtn.addEventListener('click', () => applyCoordinate('A'));
     applyBBtn.addEventListener('click', () => applyCoordinate('B'));
     
-    // Panel Küçült / Büyüt
+    // Panel Kucult / Buyut
     hidePanelBtn.addEventListener('click', () => {
         controlPanel.classList.add('hidden');
         showPanelBtn.style.display = 'block';
@@ -797,7 +967,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showPanelBtn.style.display = 'none';
     });
 
-    // Enter tuşu ile koordinat uygulama
+    // Enter tusu ile koordinat uygulama
     coordALat.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyCoordinate('A'); });
     coordALon.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyCoordinate('A'); });
     coordBLat.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyCoordinate('B'); });

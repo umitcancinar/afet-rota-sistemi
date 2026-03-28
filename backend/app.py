@@ -9,9 +9,11 @@ import tempfile
 from contextlib import asynccontextmanager
 
 import cv2
+import webbrowser
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from backend.config import HOST, PORT, DEFAULT_CITY
 from backend.ai_engine import analyze_image, pixel_to_gps
@@ -29,8 +31,13 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Sunucu başlangıcında haritayı yükle."""
+    """Sunucu başlangıcında haritayı yükle ve tarayıcıyı aç."""
     load_city_graph(DEFAULT_CITY)
+    
+    # Harita yüklendikten sonra tarayıcıyı otomatik aç
+    url = f"http://{HOST}:{PORT}"
+    logger.info(f"🌍 Uygulama hazir! Tarayici aciliyor: {url}")
+    webbrowser.open(url)
     yield
 
 
@@ -53,6 +60,11 @@ app.add_middleware(
 # Frontend statik dosyaları sun
 frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
 if os.path.isdir(frontend_dir):
+    # Ana dizini (index.html) doğrudan / yolundan sun
+    @app.get("/")
+    async def read_index():
+        return FileResponse(os.path.join(frontend_dir, "index.html"))
+    
     app.mount("/static", StaticFiles(directory=frontend_dir), name="frontend")
 
 

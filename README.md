@@ -13,18 +13,17 @@ Uydu/drone görüntülerinden **yapay zeka ile enkaz tespiti** yaparak, afet bö
 
 ## 📋 Kurulum
 
-Projenin yeni kullanıcılar tarafından **sıfır ayar** ile çalıştırılabilmesi için her şey otomatikleştirilmiştir.
+Projeyi klonladıktan sonra tek yapmanız gereken bağımlılıkları kurup sunucuyu başlatmaktır. Sunucu açıldığında haritayı **otomatik olarak** tarayıcınızda açacaktır.
 
-**Windows Kullanıcıları İçin:**
-Proje klasöründeki `start.bat` dosyasına **çift tıklayın**.
-
-**Mac / Linux Kullanıcıları İçin:**
-Terminalde şu komutu çalıştırın:
 ```bash
-./start.sh
+# 1. Bağımlılıkları yükle (Sadece ilk seferde)
+pip install -r requirements.txt
+
+# 2. Sunucuyu başlat (Harita otomatik açılacaktır)
+python -m backend.app
 ```
 
-*(Not: İlk açılışta 14MB'lık Antakya harita dosyası RAM'e yüklendiği için tarayıcı açıldığında 3-5 saniye "Bağlantı Bekleniyor" diyebilir, lütfen bekleyin).*
+*(Not: Harita dosyası (14MB) RAM'e yüklenirken 3-5 saniye bekletebilir).*
 
 ## 🗺️ Harita ve Rota Motoru
 Proje, Antakya bölgesi için önceden indirilmiş bir yol ağı (`antakya_graph.graphml`) ile birlikte gelir. Bu sayede ilk açılışta internetten harita indirme bekletmesi yaşanmaz ve "nokta bulunamadı" hataları önlenir.

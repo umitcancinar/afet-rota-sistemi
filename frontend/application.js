@@ -5,7 +5,7 @@
  */
 
 // === CONFIG ===
-const API_URL = 'http://127.0.0.1:8000';
+const API_URL = window.location.origin;
 const MAP_CENTER = [36.2023, 36.1613]; // Antakya
 const MAP_ZOOM = 17;
 

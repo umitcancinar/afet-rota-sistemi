@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
     load_city_graph(DEFAULT_CITY)
     
     # Harita yüklendikten sonra tarayıcıyı otomatik aç
-    url = f"http://{HOST}:{PORT}"
+    url = f"http://{HOST}:{PORT}/static/index.html"
     logger.info(f"🌍 Uygulama hazir! Tarayici aciliyor: {url}")
     webbrowser.open(url)
     yield

@@ -441,12 +441,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         targetLat = center.lat;
                         targetLng = center.lng;
 
+                        // Modali gecici kapat, Swal'i goster
+                        closeModal(debrisReportModal);
+
                         Swal.fire({
                             title: 'Simulasyon Modu Aktif',
                             html: `<b>Gerçek konumunuz tespit edildi:</b><br><span style="font-size:13px; color:#64748b;">(Enlem: ${realLat.toFixed(4)}, Boylam: ${realLng.toFixed(4)})</span><br><br>Sistem şu an <b>Antakya Afet Bölgesine</b> kilitli olduğu için hücresel konumunuz simülasyon amacıyla afet bölgesi merkezine yansıtılıyor.`,
                             icon: 'info',
                             confirmButtonText: 'Anladim',
                             confirmButtonColor: '#3b82f6'
+                        }).then(() => {
+                            // Swal kapatilinca modali tekrar ac
+                            openModal(debrisReportModal);
                         });
                     } else {
                         // Afet bolgesi icinde -> gercek konumu kullan

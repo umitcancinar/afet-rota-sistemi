@@ -60,6 +60,34 @@ def _haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> f
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+def _dist_to_segment(p_lat: float, p_lon: float, a_lat: float, a_lon: float, b_lat: float, b_lon: float) -> float:
+    """
+    P (Enkaz) noktasının AB doğru parçasına (yol) olan en kısa mesafesini (metre) hesaplar.
+    Düzlemsel geometri (Equirectangular projeksiyon) yaklaşımı kullanılır.
+    """
+    cos_lat = math.cos(math.radians(p_lat))
+    
+    # Derece cinsinden XY düzlemine oturt
+    px, py = p_lon * cos_lat, p_lat
+    ax, ay = a_lon * cos_lat, a_lat
+    bx, by = b_lon * cos_lat, b_lat
+    
+    l2 = (ax - bx)**2 + (ay - by)**2
+    if l2 == 0:
+        return _haversine_distance(p_lat, p_lon, a_lat, a_lon)
+        
+    # P noktasından AB doğrusuna inen dikmenin t parametresi (sınırlandırılmış: [0, 1])
+    t = max(0, min(1, ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / l2))
+    
+    proj_x = ax + t * (bx - ax)
+    proj_y = ay + t * (by - ay)
+    
+    proj_lon = proj_x / cos_lat
+    proj_lat = proj_y
+    
+    return _haversine_distance(p_lat, p_lon, proj_lat, proj_lon)
+
+
 def _apply_danger_weights(
     G: nx.MultiDiGraph,
     debris_list: list[dict]
@@ -84,31 +112,36 @@ def _apply_danger_weights(
         d_lon = debris["lon"]
         radius = debris["danger_radius_m"]
         
-        # Mekansal Filtre: Yarıçapı derece cinsine çevir (güvenlik payıyla %20 fazla)
-        # Lat/Lon farkı bu değerden büyükse haversine'e girmeye lüzum yok.
-        lat_margin = (radius * 1.2) / METERS_PER_DEG
-        lon_margin = (radius * 1.2) / (METERS_PER_DEG * 0.8) # cos(36) ~ 0.8
+        # Mekansal Filtre: Sokaklar uzun olabileceği için margin'i biraz daha geniş tut (örn: radius + 300m)
+        lat_margin = (radius + 300.0) / METERS_PER_DEG
+        lon_margin = (radius + 300.0) / (METERS_PER_DEG * 0.8) # cos(36) ~ 0.8
         
         affected_edges = 0
 
         for u, v, k, data in G.edges(keys=True, data=True):
-            # Edge'in orta noktasını bul
-            u_data = G.nodes[u]
-            v_data = G.nodes[v]
-            mid_lat = (u_data["y"] + v_data["y"]) / 2
-            mid_lon = (u_data["x"] + v_data["x"]) / 2
+            u_lat = G.nodes[u]["y"]
+            u_lon = G.nodes[u]["x"]
+            v_lat = G.nodes[v]["y"]
+            v_lon = G.nodes[v]["x"]
+            
+            mid_lat = (u_lat + v_lat) / 2
+            mid_lon = (u_lon + v_lon) / 2
 
             # HIZLI FİLTRE: Bounding Box dışındaysa atla
             if abs(mid_lat - d_lat) > lat_margin or abs(mid_lon - d_lon) > lon_margin:
                 continue
 
-            # Sadece yakınsa pahalı haversine hesabını yap
-            distance = _haversine_distance(d_lat, d_lon, mid_lat, mid_lon)
+            # Noktanın doğru parçasına dik olan EN KISA mesafesini hesapla
+            distance = _dist_to_segment(d_lat, d_lon, u_lat, u_lon, v_lat, v_lon)
 
-            if distance < radius:
-                # Mesafeye ters orantılı ağırlık çarpanı
-                proximity_factor = 1.0 - (distance / radius)
-                weight_multiplier = 1.0 + (DANGER_WEIGHT_MULTIPLIER * (proximity_factor ** 2))
+            # Sadece radius kadar değil, hafif güvenlik payıyla (radius * 1.1) kontrol edelim
+            if distance < (radius * 1.1):
+                proximity_factor = 1.0 - (distance / (radius * 1.1))
+                proximity_factor = max(0.01, proximity_factor)
+                
+                # Ağırlık çarpanını çok daha yüksek tutalım ki (örn 100000x) oradan ASLA geçmesin
+                base_multiplier = max(10000.0, DANGER_WEIGHT_MULTIPLIER * 100)
+                weight_multiplier = 1.0 + (base_multiplier * (proximity_factor ** 2))
                 data["danger_weight"] *= weight_multiplier
                 affected_edges += 1
 

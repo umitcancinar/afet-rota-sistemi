@@ -428,29 +428,63 @@ async function submitDebrisReport(e) {
     };
 
     try {
-        // Firebase'e kaydet
-        if (db) {
-            // 'add' promisesini bekle, ama eger 15sn'den uzun surerse 'timeout_fallback' don
-            const firestorePromise = db.collection('enkaz_bildirimleri').add(reportData);
-            const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve('timeout_fallback'), 15000));
-            
-            try {
-                const result = await Promise.race([firestorePromise, timeoutPromise]);
-                if (result === 'timeout_fallback') {
-                    console.warn('Firebase 15 saniye icinde yanit vermedi. Bildiri yerel olarak kaydediliyor...');
-                    saveDebrisLocalFallback(reportData);
-                    showDebrisMessage('Sunucu yanit vermedi (Zaman asimi). Bildiri yerel olarak kaydedildi.', 'success');
-                } else {
-                    showDebrisMessage('Enkaz bildirimi basariyla kaydedildi!', 'success');
+        // Firebase REST API kullanarak gonderim yapalim. (Web SDK'deki "askida kalma" sorununu tamamen asar).
+        if (typeof firebaseConfig !== 'undefined' && firebaseConfig.projectId) {
+            const projectId = firebaseConfig.projectId;
+            const restUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/enkaz_bildirimleri`;
+
+            // Veriyi Firestore REST algomasina gore paketle
+            const firestoreData = {
+                fields: {
+                    lat: { doubleValue: reportData.lat },
+                    lng: { doubleValue: reportData.lng },
+                    tarih: { stringValue: reportData.tarih },
+                    durum: { stringValue: reportData.durum }
                 }
+            };
+
+            // Opsiyonel alanlari ekle
+            if (reportData.isim) firestoreData.fields.isim = { stringValue: reportData.isim };
+            if (reportData.yikilma_orani) firestoreData.fields.yikilma_orani = { stringValue: reportData.yikilma_orani };
+            if (reportData.kisi_sayisi) firestoreData.fields.kisi_sayisi = { integerValue: reportData.kisi_sayisi.toString() };
+            if (reportData.saglik_durumu) firestoreData.fields.saglik_durumu = { stringValue: reportData.saglik_durumu };
+            if (reportData.iletisim) firestoreData.fields.iletisim = { stringValue: reportData.iletisim };
+            if (reportData.aciklama) firestoreData.fields.aciklama = { stringValue: reportData.aciklama };
+
+            // 5 saniye icinde cevap gelmezse (Asiri yavas aglar) iptal etmek icin abort controller
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 7000);
+
+            try {
+                const response = await fetch(restUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(firestoreData),
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+
+                if (!response.ok) {
+                    const errObj = await response.json();
+                    throw new Error(errObj.error ? errObj.error.message : `HTTP ${response.status}`);
+                }
+
+                showDebrisMessage('Enkaz bildirimi basariyla kaydedildi!', 'success');
             } catch (err) {
-                // Eger yetki hatasi (Missing permissions) veya offline hatasi verirse buraya duser
-                console.warn('Firebase kayit hatasi: ', err.message);
+                console.warn('REST API Firestore Hatasi: ', err.message);
                 saveDebrisLocalFallback(reportData);
-                showDebrisMessage('Firebase Hatasi: ' + err.message + ' (Yerel olarak kaydedildi)', 'success');
+                
+                if (err.name === 'AbortError') {
+                    showDebrisMessage('Baglanti yavasti, bildiri yerel belleke alindi.', 'success');
+                } else if (err.message.includes('Permission denied')) {
+                    showDebrisMessage('Yetki yok (Veritabani Gizli). Yerel belleke alindi.', 'success');
+                } else {
+                    showDebrisMessage('Sunucu eksikligi: ' + err.message + '. (Yerel depo kullanildi)', 'success');
+                }
             }
         } else {
-            // Firebase yoksa localStorage'a kaydet (fallback)
+            // Config yoksa direk yerel
             saveDebrisLocalFallback(reportData);
             showDebrisMessage('Bildiri yerel olarak kaydedildi. (Firebase kapali)', 'success');
         }

@@ -820,6 +820,23 @@ body, html {
     margin-bottom: 20px;
 }
 
+.panel-header-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.btn-weather {
+    color: var(--accent-blue-light) !important;
+    background: rgba(59, 130, 246, 0.1) !important;
+}
+
+.btn-weather:hover {
+    background: rgba(59, 130, 246, 0.2) !important;
+    color: var(--accent-blue) !important;
+}
+
 .btn-icon {
     background: var(--bg-btn-secondary);
     border: none;
@@ -1312,61 +1329,214 @@ body, html {
     to { transform: rotate(360deg); }
 }
 
+/* --- Report Icon --- */
+.btn-feature .feature-icon.icon-report {
+    background: rgba(239, 68, 68, 0.12);
+    color: var(--accent-red);
+}
+
 /* ============================================
-   ROUTE LABELS
+   WEATHER PANEL
    ============================================ */
-.route-label-bubble {
+
+.weather-panel {
+    position: fixed;
+    top: 70px;
+    right: 16px;
+    z-index: 3000;
+    width: 340px;
+    background: var(--bg-panel);
+    backdrop-filter: blur(20px) saturate(1.2);
+    border-radius: 14px;
+    border: 1px solid var(--border-primary);
+    box-shadow: var(--shadow-panel);
+    display: none;
+    overflow: hidden;
+    animation: slideUp 0.3s ease;
+}
+
+.weather-panel.active {
+    display: block;
+}
+
+.weather-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px 10px;
+    border-bottom: 1px solid var(--border-secondary);
+}
+
+.weather-panel-title {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-tertiary);
+}
+
+.weather-content {
+    padding: 16px 18px;
+}
+
+.weather-main {
     display: flex;
     align-items: center;
-    justify-content: center;
-    background: rgba(15, 23, 42, 0.85);
-    backdrop-filter: blur(8px);
-    border: 1px solid rgba(249, 115, 22, 0.4);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2), 0 0 10px rgba(249, 115, 22, 0.2);
-    border-radius: 20px;
-    padding: 6px 12px;
-    color: #e2e8f0;
+    gap: 16px;
+    margin-bottom: 14px;
+}
+
+.weather-temp {
+    font-size: 42px;
+    font-weight: 300;
+    color: var(--text-primary);
+    line-height: 1;
+}
+
+.weather-desc {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: capitalize;
+}
+
+.weather-city {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.weather-details {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.weather-detail-item {
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--bg-stat-card);
+    border: 1px solid var(--border-secondary);
+}
+
+.weather-detail-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+}
+
+.weather-detail-value {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.weather-advisory {
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.15);
+}
+
+.weather-advisory-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--accent-yellow);
+    margin-bottom: 6px;
+}
+
+.weather-advisory-text {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+/* ============================================
+   DEBRIS REPORT FORM
+   ============================================ */
+
+.debris-instruction {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    margin-bottom: 12px;
+    padding: 10px 14px;
+    background: rgba(59, 130, 246, 0.06);
+    border-radius: 8px;
+    border: 1px solid rgba(59, 130, 246, 0.12);
+}
+
+.debris-coords {
+    font-size: 12px;
+    color: var(--accent-blue);
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    padding: 8px 12px;
+    background: var(--bg-stat-card);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    border: 1px solid var(--border-secondary);
+}
+
+.debris-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.form-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+}
+
+.form-input {
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-input);
+    background: var(--bg-input);
+    color: var(--text-primary);
     font-family: 'Inter', sans-serif;
     font-size: 13px;
-    font-weight: 600;
-    pointer-events: none;
-    white-space: nowrap;
+    outline: none;
     transition: all 0.2s ease;
 }
 
-.route-label-bubble-alt {
-    background: rgba(15, 23, 42, 0.85);
-    border: 1px solid rgba(59, 130, 246, 0.4);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2), 0 0 10px rgba(59, 130, 246, 0.2);
+.form-input:focus {
+    border-color: var(--border-input-focus);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
 }
 
-.route-label-tag {
-    background: rgba(59, 130, 246, 0.15);
-    color: #60a5fa;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 10px;
-    font-weight: 700;
-    margin-right: 8px;
-    letter-spacing: 0.5px;
+.form-textarea {
+    resize: vertical;
+    min-height: 50px;
 }
 
-.route-label-dist {
-    color: #f97316;
+select.form-input {
+    cursor: pointer;
 }
 
-.route-label-dist-alt {
-    color: #3b82f6;
-}
-
-.route-label-sep {
-    margin: 0 6px;
-    color: #64748b;
-    opacity: 0.6;
-}
-
-.route-label-time {
-    color: #94a3b8;
+.debris-form-message {
     font-size: 12px;
+    margin-top: 6px;
+    min-height: 18px;
 }
 
+.debris-form-message.success {
+    color: var(--accent-green);
+}
+
+.debris-form-message.error {
+    color: var(--accent-red);
+}

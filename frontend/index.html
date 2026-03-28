@@ -25,7 +25,13 @@
     <div class="panel-header">
         <div class="panel-header-row">
             <h1>Afet Rota Sistemi</h1>
-            <button id="hidePanelBtn" class="btn-icon" title="Kucult">—</button>
+            <!-- Hava Durumu Butonu + Kucult Butonu -->
+            <div class="panel-header-actions">
+                <button id="weatherBtn" class="btn-icon btn-weather" title="Hava Durumu">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/></svg>
+                </button>
+                <button id="hidePanelBtn" class="btn-icon" title="Kucult">—</button>
+            </div>
         </div>
         <p>Haritada A (baslangic) ve B (hedef) noktalarini sec, yakinlas ve analizi baslat.</p>
     </div>
@@ -74,7 +80,7 @@
             </div>
         </div>
 
-        <!-- Anlik Depremler & Acil Durum Butonlari -->
+        <!-- Anlik Depremler & Acil Durum & Enkaz Bildir Butonlari -->
         <div class="feature-buttons">
             <button id="earthquakeBtn" class="btn-feature">
                 <div class="feature-icon icon-earthquake">
@@ -92,6 +98,15 @@
                 <div class="feature-text">
                     <span>Acil Durum Numaralari</span>
                     <span>Onemli kurum telefonlari</span>
+                </div>
+            </button>
+            <button id="reportDebrisBtn" class="btn-feature">
+                <div class="feature-icon icon-report">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                </div>
+                <div class="feature-text">
+                    <span>Enkaz Bildir / Ekle</span>
+                    <span>Haritada enkaz noktasi isaretleyin</span>
                 </div>
             </button>
         </div>
@@ -171,6 +186,17 @@
 <!-- Harita -->
 <div id="map"></div>
 
+<!-- Hava Durumu Paneli (sag ustte gorunur) -->
+<div id="weatherPanel" class="weather-panel">
+    <div class="weather-panel-header">
+        <span class="weather-panel-title">Hava Durumu</span>
+        <button id="weatherPanelClose" class="modal-close" style="width:24px;height:24px;font-size:14px;">&times;</button>
+    </div>
+    <div id="weatherContent" class="weather-content">
+        <div class="eq-loading"><div class="spinner"></div>Yukleniyor...</div>
+    </div>
+</div>
+
 <!-- Deprem Listesi Modal -->
 <div id="earthquakeModal" class="modal-overlay">
     <div class="modal-container">
@@ -208,8 +234,68 @@
         </div>
         <div class="modal-body">
             <div class="emergency-list" id="emergencyListContent">
-                <!-- JS ile doldurulacak -->
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Enkaz Bildir Modal -->
+<div id="debrisReportModal" class="modal-overlay">
+    <div class="modal-container" style="width:440px;">
+        <div class="modal-header">
+            <h2>
+                <span class="modal-header-icon" style="background:rgba(239,68,68,0.12);color:#ef4444;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                </span>
+                Enkaz Bildir
+            </h2>
+            <button class="modal-close" id="debrisReportClose">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p id="debrisReportInstruction" class="debris-instruction">Haritada enkaz noktasini secmek icin tiklayin.</p>
+            <div id="debrisReportCoords" class="debris-coords" style="display:none;">
+                <span id="debrisReportLatLng"></span>
+            </div>
+            <form id="debrisReportForm" class="debris-form" style="display:none;">
+                <div class="form-group">
+                    <label class="form-label">Isim Soyisim</label>
+                    <input type="text" id="debrisName" class="form-input" placeholder="Opsiyonel">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Yikilma Orani Tahmini</label>
+                    <select id="debrisCollapseRate" class="form-input">
+                        <option value="">Secin (opsiyonel)</option>
+                        <option value="hafif">Hafif Hasar (%10-30)</option>
+                        <option value="orta">Orta Hasar (%30-60)</option>
+                        <option value="agir">Agir Hasar (%60-90)</option>
+                        <option value="tamamen">Tamamen Yikik (%90-100)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Enkazdaki Tahmini Kisi Sayisi</label>
+                    <input type="number" id="debrisPersonCount" class="form-input" placeholder="Opsiyonel" min="0">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Saglik Durumu</label>
+                    <select id="debrisHealthStatus" class="form-input">
+                        <option value="">Secin (opsiyonel)</option>
+                        <option value="iyi">Iyi - Yaralanma yok</option>
+                        <option value="hafif_yarali">Hafif Yarali</option>
+                        <option value="agir_yarali">Agir Yarali - Acil mudahale</option>
+                        <option value="bilinmiyor">Bilinmiyor</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Iletisim Numarasi</label>
+                    <input type="tel" id="debrisPhone" class="form-input" placeholder="Opsiyonel">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Ek Aciklama</label>
+                    <textarea id="debrisNote" class="form-input form-textarea" placeholder="Opsiyonel" rows="2"></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary" id="debrisSubmitBtn" style="margin-top:10px;">Enkaz Bildirimi Gonder</button>
+                <div id="debrisFormMessage" class="debris-form-message"></div>
+            </form>
         </div>
     </div>
 </div>
@@ -217,6 +303,13 @@
 <!-- JS Kutuphaneleri -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+<!-- Firebase SDK (compat versiyonu — basit kullanim) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+<!-- Firebase Config -->
+<script src="firebase-config.js"></script>
 
 <!-- Drone Modu Overlay Ekrani (Baslangicta Gizli) -->
 <div id="droneModeOverlay" class="drone-overlay">

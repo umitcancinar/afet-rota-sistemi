@@ -8,6 +8,7 @@ Yeni yaklaşım:  Yarıçaplı edge ağırlıklandırma → weighted shortest_pa
 """
 import logging
 import math
+import os
 import osmnx as ox
 import networkx as nx
 from backend.config import DANGER_WEIGHT_MULTIPLIER
@@ -25,10 +26,25 @@ G_REGION = None
 def load_city_graph(city_name: str) -> None:
     """Şehir yol ağını RAM'e yükler. Sunucu başlangıcında 1 kez çağrılır."""
     global G_REGION
-    logger.info(f"🌍 {city_name} yol ağı RAM'e yükleniyor...")
+    
+    # Yerel bir .graphml dosyası var mı kontrol et (Daha hızlı yükleme için)
+    cache_file = "antakya_graph.graphml"
+    
+    if os.path.exists(cache_file):
+        logger.info(f"📂 Yerel harita dosyası bulundu: {cache_file}. Yükleniyor...")
+        try:
+            G_REGION = ox.load_graphml(filepath=cache_file)
+            logger.info(f"✅ Yerel harita hazır! ({G_REGION.number_of_nodes()} düğüm)")
+            return
+        except Exception as e:
+            logger.warning(f"⚠️ Yerel dosya okunamadı, OSM'den denenecek: {e}")
+
+    logger.info(f"🌍 {city_name} yol ağı OSM üzerinden indiriliyor/yükleniyor...")
     try:
         G_REGION = ox.graph_from_place(city_name, network_type="drive")
-        logger.info(f"✅ {city_name} yol ağı hazır! ({G_REGION.number_of_nodes()} düğüm, {G_REGION.number_of_edges()} kenar)")
+        # Sonraki sefer için kaydet
+        ox.save_graphml(G_REGION, filepath=cache_file)
+        logger.info(f"✅ {city_name} yol ağı hazır! ({G_REGION.number_of_nodes()} düğüm)")
     except Exception as e:
         logger.error(f"❌ Harita yüklenemedi: {e}")
         raise
@@ -44,6 +60,34 @@ def _haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> f
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+def _dist_to_segment(p_lat: float, p_lon: float, a_lat: float, a_lon: float, b_lat: float, b_lon: float) -> float:
+    """
+    P (Enkaz) noktasının AB doğru parçasına (yol) olan en kısa mesafesini (metre) hesaplar.
+    Düzlemsel geometri (Equirectangular projeksiyon) yaklaşımı kullanılır.
+    """
+    cos_lat = math.cos(math.radians(p_lat))
+    
+    # Derece cinsinden XY düzlemine oturt
+    px, py = p_lon * cos_lat, p_lat
+    ax, ay = a_lon * cos_lat, a_lat
+    bx, by = b_lon * cos_lat, b_lat
+    
+    l2 = (ax - bx)**2 + (ay - by)**2
+    if l2 == 0:
+        return _haversine_distance(p_lat, p_lon, a_lat, a_lon)
+        
+    # P noktasından AB doğrusuna inen dikmenin t parametresi (sınırlandırılmış: [0, 1])
+    t = max(0, min(1, ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / l2))
+    
+    proj_x = ax + t * (bx - ax)
+    proj_y = ay + t * (by - ay)
+    
+    proj_lon = proj_x / cos_lat
+    proj_lat = proj_y
+    
+    return _haversine_distance(p_lat, p_lon, proj_lat, proj_lon)
+
+
 def _apply_danger_weights(
     G: nx.MultiDiGraph,
     debris_list: list[dict]
@@ -51,45 +95,59 @@ def _apply_danger_weights(
     """
     Enkaz noktaları etrafındaki edge'lere tehlike ağırlığı uygular.
     
-    Eski yöntem (node silme) yerine edge ağırlıklandırma kullanıyoruz çünkü:
-    - Node silmek bazen grafı bölüp rota bulamaz hale getirir
-    - Ağırlıklandırma, rotayı "uzak tutmaya" çalışır ama tamamen kapatmaz
-    - Daha gerçekçi: Bazı yollar tehlikeli ama geçilebilir durumda olabilir
+    PERFORMANS İYİLEŞTİRMESİ:
+    Sadece enkazın yakınındaki (bounding box) edge'leri kontrol eder.
+    O(Debris * Edges) karmaşıklığını büyük ölçüde azaltır.
     """
+    # Sabit: 1 derece enlem/boylam yaklaşık kaç metre? (Antakya civarı)
+    METERS_PER_DEG = 111320.0
+    
     # Tüm edge'lere orijinal ağırlığı kaydet (yoksa length kullan)
     for u, v, k, data in G.edges(keys=True, data=True):
         if "danger_weight" not in data:
-            data["danger_weight"] = data.get("length", 100)
+            data["danger_weight"] = float(data.get("length", 100))
 
     for debris in debris_list:
         d_lat = debris["lat"]
         d_lon = debris["lon"]
         radius = debris["danger_radius_m"]
-
+        
+        # Mekansal Filtre: Sokaklar çok uzun olabileceği için margin'i devasa tut (örn: radius + 2000m)
+        # Eğer sokak segmenti 2km'den uzun değilse (ki şehir içinde imkansız) asla gözden kaçırmaz.
+        lat_margin = (radius + 2000.0) / METERS_PER_DEG
+        lon_margin = (radius + 2000.0) / (METERS_PER_DEG * 0.8) # cos(36) ~ 0.8
+        
         affected_edges = 0
 
         for u, v, k, data in G.edges(keys=True, data=True):
-            # Edge'in orta noktasını bul
-            u_data = G.nodes[u]
-            v_data = G.nodes[v]
-            mid_lat = (u_data["y"] + v_data["y"]) / 2
-            mid_lon = (u_data["x"] + v_data["x"]) / 2
+            u_lat = G.nodes[u]["y"]
+            u_lon = G.nodes[u]["x"]
+            v_lat = G.nodes[v]["y"]
+            v_lon = G.nodes[v]["x"]
+            
+            mid_lat = (u_lat + v_lat) / 2
+            mid_lon = (u_lon + v_lon) / 2
 
-            distance = _haversine_distance(d_lat, d_lon, mid_lat, mid_lon)
+            # HIZLI FİLTRE: Bounding Box. U, V veya Mid noktalarından en az BİRİ margin içindeyse hesapla
+            if (abs(u_lat - d_lat) > lat_margin and abs(v_lat - d_lat) > lat_margin and abs(mid_lat - d_lat) > lat_margin) or \
+               (abs(u_lon - d_lon) > lon_margin and abs(v_lon - d_lon) > lon_margin and abs(mid_lon - d_lon) > lon_margin):
+                continue
 
-            if distance < radius:
-                # Mesafeye ters orantılı ağırlık çarpanı
-                # Enkaza çok yakın → çok yüksek çarpan
-                # Yarıçap sınırına yakın → düşük çarpan
-                proximity_factor = 1 - (distance / radius)  # 0..1 (1 = tam üstünde)
-                weight_multiplier = 1 + (DANGER_WEIGHT_MULTIPLIER * proximity_factor ** 2)
-                data["danger_weight"] = data["danger_weight"] * weight_multiplier
+            # Noktanın doğru parçasına dik olan EN KISA mesafesini hesapla
+            distance = _dist_to_segment(d_lat, d_lon, u_lat, u_lon, v_lat, v_lon)
+
+            # Sadece radius kadar değil, %20 güvenlik payıyla (radius * 1.2) kontrol edelim
+            if distance < (radius * 1.2):
+                # Kademeli ceza (multiplier) yerine devasa SABİT bir ceza ekliyoruz (+ 1000 km).
+                # Böylece yol kenarından bile geçse kesinlikle o sokağa girmeyi reddedecek.
+                data["danger_weight"] += 1_000_000.0
                 affected_edges += 1
 
-        logger.info(
-            f"Enkaz ({d_lat:.5f}, {d_lon:.5f}): "
-            f"yarıçap={radius}m, etkilenen_kenar={affected_edges}"
-        )
+        if affected_edges > 0:
+            logger.info(
+                f"Enkaz ({d_lat:.5f}, {d_lon:.5f}): "
+                f"yarıçap={radius}m, etkilenen_kenar={affected_edges}"
+            )
 
     return G
 
@@ -128,6 +186,12 @@ def calculate_route(
     G_active = G_REGION.copy()
 
     logger.info(f"Aktif graf: {G_active.number_of_nodes()} düğüm, {G_active.number_of_edges()} kenar")
+    
+    # Rota hesaplamadan önce TÜM kenarlara temel ağırlığı (uzunluk) ata.
+    # Bu yapılmazsa enkaz olmayan durumlarda NetworkX ağırlığı 1 sayar ve rota bozulur.
+    for u, v, k, data in G_active.edges(keys=True, data=True):
+        if "danger_weight" not in data:
+            data["danger_weight"] = float(data.get("length", 100))
 
     # 2. Tehlike ağırlıkları uygula
     if debris_list:
@@ -162,19 +226,54 @@ def calculate_route(
     if primary_route is None:
         raise RuntimeError("Güzergah bulunamadı. Noktaları daha geniş seçmeyi dene.")
 
-    primary_coords = [
-        [G_active.nodes[n]["y"], G_active.nodes[n]["x"]]
-        for n in primary_route
-    ]
+    # Gerçek A ve B noktalarını listenin başına ve sonuna ekle
+    # Gerçek sokak kıvrımlarını (geometry) çizmek için LineString'i kullan
+    primary_coords = [[start_lat, start_lon]]
+    for i in range(len(primary_route)):
+        if i > 0:
+            u_node = primary_route[i-1]
+            v_node = primary_route[i]
+            edge_data = G_active.get_edge_data(u_node, v_node)[0]
+            if "geometry" in edge_data:
+                # shapely LineString (lon, lat) formatındadır
+                for coord in list(edge_data["geometry"].coords)[1:]:
+                    primary_coords.append([coord[1], coord[0]])
+                continue
+        primary_coords.append([G_active.nodes[primary_route[i]]["y"], G_active.nodes[primary_route[i]]["x"]])
+    
+    primary_coords.append([end_lat, end_lon])
 
-    # 5. Alternatif rota: Normal ağırlıklı (karşılaştırma için)
+    # 5. Gerçek Bir Alternatif Rota Bul (Ana rotadaki kenarları cezalandırarak)
+    # Önce ana rotadaki kenarların tehlike ağırlıklarını geçici olarak artıralım (örn. 5 kat)
+    # Böylece algoritma mümkünse başka bir *güvenli* yol bulmaya çalışır.
     alt_coords = None
-    alt_route = _find_path(G_active, start_node, end_node, weight="length")
-    if alt_route and alt_route != primary_route:
-        alt_coords = [
-            [G_active.nodes[n]["y"], G_active.nodes[n]["x"]]
-            for n in alt_route
-        ]
+    if len(primary_route) > 1:
+        # Ana rota kenarlarının ağırlığını orantısal artır (1.5x)
+        # Böylece mantıklı alternatif caddeler arar, 1km düz ceza gibi alakasız rotalar çizmez.
+        for i in range(len(primary_route) - 1):
+            u = primary_route[i]
+            v = primary_route[i+1]
+            if G_active.has_edge(u, v):
+                for k in G_active[u][v]:
+                    if "danger_weight" in G_active[u][v][k]:
+                        G_active[u][v][k]["danger_weight"] *= 1.5
+
+        alt_route = _find_path(G_active, start_node, end_node, weight="danger_weight")
+        
+        if alt_route and alt_route != primary_route:
+            alt_coords = [[start_lat, start_lon]]
+            for i in range(len(alt_route)):
+                if i > 0:
+                    u_node = alt_route[i-1]
+                    v_node = alt_route[i]
+                    edge_data = G_active.get_edge_data(u_node, v_node)[0]
+                    if "geometry" in edge_data:
+                        for coord in list(edge_data["geometry"].coords)[1:]:
+                            alt_coords.append([coord[1], coord[0]])
+                        continue
+                alt_coords.append([G_active.nodes[alt_route[i]]["y"], G_active.nodes[alt_route[i]]["x"]])
+            
+            alt_coords.append([end_lat, end_lon])
 
     logger.info(
         f"✅ Rota hazır: ana={len(primary_coords)} nokta"

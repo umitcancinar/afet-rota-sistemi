@@ -10,43 +10,143 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
     <!-- App CSS -->
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="style2.css" />
+
+    <!-- SweetAlert2 -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body>
+
+<!-- Theme Toggle Button (Sag Ust) -->
+<button id="themeToggleBtn" class="theme-toggle" title="Tema Degistir">
+    <svg class="icon-sun" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+    <svg class="icon-moon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+</button>
 
 <!-- Kontrol Paneli -->
 <div class="control-panel">
     <div class="panel-header">
-        <h1>🛰️ Afet Rota Sistemi</h1>
-        <p>Haritada A (başlangıç) ve B (hedef) noktalarını seç, yakınlaş ve analizi başlat.</p>
+        <div class="panel-header-row">
+            <h1>Afet Rota Sistemi</h1>
+            <!-- Hava Durumu Butonu + Kucult Butonu -->
+            <div class="panel-header-actions">
+                <button id="weatherBtn" class="btn-icon btn-weather" title="Hava Durumu">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/></svg>
+                </button>
+                <button id="hidePanelBtn" class="btn-icon" title="Kucult">—</button>
+            </div>
+        </div>
+        <p>Haritada A (baslangic) ve B (hedef) noktalarini sec, yakinlas ve analizi baslat.</p>
     </div>
     
     <div class="panel-body">
+        <!-- Koordinat Giris Bolumu -->
+        <div class="coord-section">
+            <div class="coord-section-title">Koordinat Girisi (WGS84)</div>
+
+            <!-- A Noktasi -->
+            <div class="coord-group">
+                <div class="coord-group-label">
+                    <span class="coord-marker-badge" style="background:#3b82f6;">A</span>
+                    Baslangic Noktasi
+                </div>
+                <div class="coord-inputs">
+                    <div class="coord-field">
+                        <label class="coord-label" for="coordALat">Enlem</label>
+                        <input type="number" id="coordALat" class="coord-input" placeholder="36.202300" step="0.000001" min="-90" max="90">
+                    </div>
+                    <div class="coord-field">
+                        <label class="coord-label" for="coordALon">Boylam</label>
+                        <input type="number" id="coordALon" class="coord-input" placeholder="36.161300" step="0.000001" min="-180" max="180">
+                    </div>
+                    <button id="applyABtn" class="btn btn-coord" title="Koordinati uygula">Uygula</button>
+                </div>
+            </div>
+
+            <!-- B Noktasi -->
+            <div class="coord-group">
+                <div class="coord-group-label">
+                    <span class="coord-marker-badge" style="background:#ef4444;">B</span>
+                    Hedef Noktasi
+                </div>
+                <div class="coord-inputs">
+                    <div class="coord-field">
+                        <label class="coord-label" for="coordBLat">Enlem</label>
+                        <input type="number" id="coordBLat" class="coord-input" placeholder="36.205000" step="0.000001" min="-90" max="90">
+                    </div>
+                    <div class="coord-field">
+                        <label class="coord-label" for="coordBLon">Boylam</label>
+                        <input type="number" id="coordBLon" class="coord-input" placeholder="36.165000" step="0.000001" min="-180" max="180">
+                    </div>
+                    <button id="applyBBtn" class="btn btn-coord" title="Koordinati uygula">Uygula</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Anlik Depremler & Acil Durum & Enkaz Bildir Butonlari -->
+        <div class="feature-buttons">
+            <button id="earthquakeBtn" class="btn-feature">
+                <div class="feature-icon icon-earthquake">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                </div>
+                <div class="feature-text">
+                    <span>Anlik Depremler</span>
+                    <span>Turkiye geneli canli deprem verileri</span>
+                </div>
+            </button>
+            <button id="emergencyBtn" class="btn-feature">
+                <div class="feature-icon icon-emergency">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                </div>
+                <div class="feature-text">
+                    <span>Acil Durum Numaralari</span>
+                    <span>Onemli kurum telefonlari</span>
+                </div>
+            </button>
+            <button id="reportDebrisBtn" class="btn-feature">
+                <div class="feature-icon icon-report">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                </div>
+                <div class="feature-text">
+                    <span>Enkaz Bildir / Ekle</span>
+                    <span>Haritada enkaz noktasi isaretleyin</span>
+                </div>
+            </button>
+        </div>
+
+        <!-- Drone / Helikopter Modu Butonu -->
+        <div class="drone-mode-section">
+            <button id="openDroneWorkspaceBtn" class="btn-drone">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                Drone / Helikopter Calisma Alanina Gec
+            </button>
+        </div>
+
         <div class="btn-group">
-            <button id="analizBtn" class="btn btn-primary">🧠 ANALİZ BAŞLAT</button>
-            <button id="resetBtn" class="btn btn-secondary">↺ Sıfırla</button>
+            <button id="analizBtn" class="btn btn-primary">ANALIZ BASLAT</button>
+            <button id="resetBtn" class="btn btn-secondary">Sifirla</button>
         </div>
 
         <!-- Durum Kutusu -->
-        <div id="statusBox" class="status-box">Sistem hazır. Haritada A ve B noktalarını seç.</div>
+        <div id="statusBox" class="status-box">Sistem hazir. Haritada A ve B noktalarini sec.</div>
 
-        <!-- İlerleme Adımları -->
+        <!-- Ilerleme Adimlari -->
         <ul id="progressSteps" class="progress-steps">
             <li id="stepCapture" class="progress-step">
-                <span class="step-icon">📸</span> Ekran yakalama
+                <span class="step-icon">1</span> Ekran yakalama
             </li>
             <li id="stepAI" class="progress-step">
-                <span class="step-icon">🧠</span> AI enkaz analizi
+                <span class="step-icon">2</span> AI enkaz analizi
             </li>
             <li id="stepRoute" class="progress-step">
-                <span class="step-icon">🗺️</span> Rota hesaplama
+                <span class="step-icon">3</span> Rota hesaplama
             </li>
             <li id="stepDone" class="progress-step">
-                <span class="step-icon">✅</span> Tamamlandı
+                <span class="step-icon">4</span> Tamamlandi
             </li>
         </ul>
 
-        <!-- İstatistikler -->
+        <!-- Istatistikler -->
         <div id="statsGrid" class="stats-grid">
             <div class="stat-card danger">
                 <div class="stat-value" id="statEnkaz">0</div>
@@ -54,7 +154,7 @@
             </div>
             <div class="stat-card safe">
                 <div class="stat-value" id="statRota">0</div>
-                <div class="stat-label">Rota Noktası</div>
+                <div class="stat-label">Rota Noktasi</div>
             </div>
         </div>
     </div>
@@ -62,34 +162,218 @@
 
 <!-- Lejant -->
 <div id="legendPanel" class="legend-panel">
-    <h3>Harita Lejantı</h3>
+    <h3>Harita Lejanti</h3>
     <div class="legend-item">
         <div class="legend-color" style="background: #f97316;"></div>
-        <span>Güvenli Rota</span>
+        <span>Guvenli Rota</span>
     </div>
     <div class="legend-item">
-        <div class="legend-color" style="background: #fbbf24; opacity: 0.5;"></div>
+        <div class="legend-color" style="background: #3b82f6; opacity: 0.6;"></div>
         <span>Alternatif Rota</span>
     </div>
     <div class="legend-item">
         <div class="legend-circle" style="background: rgba(239,68,68,0.2); border-color: #ef4444;"></div>
-        <span>Tehlike Bölgesi</span>
+        <span>Tehlike Bolgesi</span>
     </div>
     <div class="legend-item">
         <div class="legend-circle" style="background: #f87171; border-color: #dc2626; width:10px; height:10px;"></div>
-        <span>Enkaz Noktası</span>
+        <span>Enkaz Noktasi</span>
     </div>
 </div>
+
+<!-- Panel Acma Butonu (Panel Gizliyken Gorunur) -->
+<button id="showPanelBtn" class="btn-show-panel">
+    Komuta Merkezi
+</button>
 
 <!-- Harita -->
 <div id="map"></div>
 
-<!-- JS Kütüphaneleri -->
+<!-- Hava Durumu Paneli (sag ustte gorunur) -->
+<div id="weatherPanel" class="weather-panel">
+    <div class="weather-panel-header">
+        <span class="weather-panel-title">Hava Durumu</span>
+        <button id="weatherPanelClose" class="modal-close" style="width:24px;height:24px;font-size:14px;">&times;</button>
+    </div>
+    <div id="weatherContent" class="weather-content">
+        <div class="eq-loading"><div class="spinner"></div>Yukleniyor...</div>
+    </div>
+</div>
+
+<!-- Deprem Listesi Modal -->
+<div id="earthquakeModal" class="modal-overlay">
+    <div class="modal-container">
+        <div class="modal-header">
+            <h2>
+                <span class="modal-header-icon eq-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                </span>
+                Anlik Depremler
+            </h2>
+            <button class="modal-close" id="earthquakeModalClose">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="earthquakeListContent">
+                <div class="eq-loading">
+                    <div class="spinner"></div>
+                    Deprem verileri yukleniyor...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Acil Durum Numaralari Modal -->
+<div id="emergencyModal" class="modal-overlay">
+    <div class="modal-container">
+        <div class="modal-header">
+            <h2>
+                <span class="modal-header-icon em-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                </span>
+                Acil Durum Numaralari
+            </h2>
+            <button class="modal-close" id="emergencyModalClose">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="emergency-list" id="emergencyListContent">
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Enkaz Bildir Modal -->
+<div id="debrisReportModal" class="modal-overlay">
+    <div class="modal-container" style="width:440px;">
+        <div class="modal-header">
+            <h2>
+                <span class="modal-header-icon" style="background:rgba(239,68,68,0.12);color:#ef4444;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                </span>
+                Enkaz Bildir
+            </h2>
+            <button class="modal-close" id="debrisReportClose">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p id="debrisReportInstruction" class="debris-instruction">Lutfen formu doldurun ve haritadan konumunuzu secin.</p>
+            
+            <div id="debrisLocationSection" style="margin-bottom: 20px; padding: 15px; background: rgba(59, 130, 246, 0.1); border: 1px dashed rgba(59, 130, 246, 0.5); border-radius: 8px; text-align: center;">
+                <button type="button" id="selectDebrisMapBtn" class="btn btn-secondary" style="margin-bottom: 8px; width: 100%;">
+                    📍 Haritadan Konum Sec
+                </button>
+                <button type="button" id="autoDebrisMapBtn" class="btn btn-primary" style="width: 100%; margin-bottom: 8px;">
+                    🎯 Otomatik Konum Sec (Merkez)
+                </button>
+                <button type="button" id="autoGpsMapBtn" class="btn" style="width: 100%; background-color: #f59e0b; color: white; margin-bottom: 8px;">
+                    📡 Gercek GPS (Simulasyon)
+                </button>
+                <div id="debrisReportCoords" class="debris-coords" style="display:none; margin-top: 12px; padding-top: 12px; border-top: 1px dashed rgba(59, 130, 246, 0.3);">
+                    <span id="debrisReportLatLng" style="color: #34d399; font-weight: 600; font-size: 13px;"></span>
+                </div>
+            </div>
+
+            <form id="debrisReportForm" class="debris-form">
+                <div class="form-group">
+                    <label class="form-label">Isim Soyisim</label>
+                    <input type="text" id="debrisName" class="form-input" placeholder="Opsiyonel">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Yikilma Orani Tahmini</label>
+                    <select id="debrisCollapseRate" class="form-input">
+                        <option value="">Secin (opsiyonel)</option>
+                        <option value="hafif">Hafif Hasar (%10-30)</option>
+                        <option value="orta">Orta Hasar (%30-60)</option>
+                        <option value="agir">Agir Hasar (%60-90)</option>
+                        <option value="tamamen">Tamamen Yikik (%90-100)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Enkazdaki Tahmini Kisi Sayisi</label>
+                    <input type="number" id="debrisPersonCount" class="form-input" placeholder="Opsiyonel" min="0">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Saglik Durumu</label>
+                    <select id="debrisHealthStatus" class="form-input">
+                        <option value="">Secin (opsiyonel)</option>
+                        <option value="iyi">Iyi - Yaralanma yok</option>
+                        <option value="hafif_yarali">Hafif Yarali</option>
+                        <option value="agir_yarali">Agir Yarali - Acil mudahale</option>
+                        <option value="bilinmiyor">Bilinmiyor</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Iletisim Numarasi</label>
+                    <input type="tel" id="debrisPhone" class="form-input" placeholder="Opsiyonel">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Ek Aciklama</label>
+                    <textarea id="debrisNote" class="form-input form-textarea" placeholder="Opsiyonel" rows="2"></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary" id="debrisSubmitBtn" style="margin-top:10px;">Enkaz Bildirimi Gonder</button>
+                <div id="debrisFormMessage" class="debris-form-message"></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- JS Kutuphaneleri -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
-<!-- App JS -->
-<script src="app.js"></script>
+<!-- Firebase SDK (compat versiyonu — basit kullanim) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 
+<!-- Firebase Config -->
+<script src="firebase-config.js"></script>
+
+<!-- Drone Modu Overlay Ekrani (Baslangicta Gizli) -->
+<div id="droneModeOverlay" class="drone-overlay">
+    <div class="drone-toolbar">
+        <div class="drone-toolbar-left">
+            <h2>Drone/Helikopter Modu</h2>
+            <span id="droneInstruction" class="drone-instruction">1. Baslangic noktasini (A) secmek icin gorsele tiklayin.</span>
+        </div>
+        <div class="drone-gps-row">
+            <div class="drone-gps-field">
+                <label>NW Lat</label>
+                <input type="number" id="droneNWLat" class="drone-gps-input" step="0.00001" placeholder="36.205">
+            </div>
+            <div class="drone-gps-field">
+                <label>NW Lon</label>
+                <input type="number" id="droneNWLon" class="drone-gps-input" step="0.00001" placeholder="36.158">
+            </div>
+            <div class="drone-gps-field">
+                <label>SE Lat</label>
+                <input type="number" id="droneSELat" class="drone-gps-input" step="0.00001" placeholder="36.200">
+            </div>
+            <div class="drone-gps-field">
+                <label>SE Lon</label>
+                <input type="number" id="droneSELon" class="drone-gps-input" step="0.00001" placeholder="36.165">
+            </div>
+        </div>
+        <div class="drone-toolbar-right">
+            <button id="droneAnalyzeBtn" class="btn btn-primary" disabled>Analiz Baslat</button>
+            <button id="droneCloseBtn" class="btn btn-secondary">Kapat</button>
+        </div>
+    </div>
+    <div class="drone-workspace-empty" id="droneWorkspaceEmpty">
+        <label for="droneFileInput" class="drone-huge-upload-area">
+            <div style="font-size: 40px; margin-bottom: 15px; color: #64748b;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </div>
+            <h3 style="color: var(--text-primary); margin-bottom: 5px;">Drone / Helikopter Goruntusu Yukle</h3>
+            <p style="color: var(--text-muted); font-size: 14px;">Analiz etmek istediginiz afet fotografini secmek icin buraya tiklayin.</p>
+        </label>
+        <input type="file" id="droneFileInput" accept="image/*" style="display:none;">
+    </div>
+    
+    <div class="drone-canvas-container" id="droneCanvasContainer" style="display:none;">
+        <canvas id="droneCanvas"></canvas>
+    </div>
+</div>
+
+<!-- App JS -->
+<script src="application.js"></script>
 </body>
 </html>

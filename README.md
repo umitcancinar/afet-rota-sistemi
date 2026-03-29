@@ -13,17 +13,20 @@ Uydu/drone görüntülerinden **yapay zeka ile enkaz tespiti** yaparak, afet bö
 
 ## 📋 Kurulum
 
-```bash
-# 1. Sanal ortam oluştur
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+Projeyi klonladıktan sonra tek yapmanız gereken bağımlılıkları kurup sunucuyu başlatmaktır. Sunucu açıldığında haritayı **otomatik olarak** tarayıcınızda açacaktır.
 
-# 2. Bağımlılıkları yükle
+```bash
+# 1. Bağımlılıkları yükle (Sadece ilk seferde)
 pip install -r requirements.txt
 
-# 3. .env dosyasını düzenle (API anahtarını ayarla)
-# .env dosyası zaten mevcut, gerekirse düzenle
+# 2. Sunucuyu başlat (Harita otomatik açılacaktır)
+python -m backend.app
 ```
+
+*(Not: Harita dosyası (14MB) RAM'e yüklenirken 3-5 saniye bekletebilir).*
+
+## 🗺️ Harita ve Rota Motoru
+Proje, Antakya bölgesi için önceden indirilmiş bir yol ağı (`antakya_graph.graphml`) ile birlikte gelir. Bu sayede ilk açılışta internetten harita indirme bekletmesi yaşanmaz ve "nokta bulunamadı" hataları önlenir.
 
 ## 🏃 Çalıştırma
 
@@ -45,8 +48,8 @@ afet-rota-sistemi/
 │   └── config.py           # Merkezi konfigürasyon
 ├── frontend/
 │   ├── index.html           # Ana sayfa
-│   ├── style.css            # Premium dark theme
-│   └── app.js               # Frontend controller
+│   ├── style2.css           # Premium dark theme
+│   └── application.js       # Frontend controller
 ├── .env                     # API anahtarları (git'e dahil değil)
 ├── requirements.txt         # Python bağımlılıkları
 └── README.md

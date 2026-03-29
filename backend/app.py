@@ -9,12 +9,15 @@ import tempfile
 from contextlib import asynccontextmanager
 
 import cv2
+import webbrowser
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from backend.config import HOST, PORT, DEFAULT_CITY
-from backend.ai_engine import analyze_image
+from backend.ai_engine import analyze_image, pixel_to_gps
+from backend.drone_engine import analyze_drone_image_v2, route_gps_to_pixels, gps_to_pixel
 from backend.routing_engine import load_city_graph, calculate_route
 
 # Loglama ayarları
@@ -28,8 +31,13 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Sunucu başlangıcında haritayı yükle."""
+    """Sunucu başlangıcında haritayı yükle ve tarayıcıyı aç."""
     load_city_graph(DEFAULT_CITY)
+    
+    # Harita yüklendikten sonra tarayıcıyı otomatik aç
+    url = f"http://{HOST}:{PORT}/static/index.html"
+    logger.info(f"🌍 Uygulama hazir! Tarayici aciliyor: {url}")
+    webbrowser.open(url)
     yield
 
 
@@ -52,6 +60,11 @@ app.add_middleware(
 # Frontend statik dosyaları sun
 frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
 if os.path.isdir(frontend_dir):
+    # Ana dizini (index.html) doğrudan / yolundan sun
+    @app.get("/")
+    async def read_index():
+        return FileResponse(os.path.join(frontend_dir, "index.html"))
+    
     app.mount("/static", StaticFiles(directory=frontend_dir), name="frontend")
 
 
@@ -61,7 +74,8 @@ async def otonom_analiz(
     se_lat: float = Form(...), se_lon: float = Form(...),
     baslangic_lat: float = Form(...), baslangic_lon: float = Form(...),
     hedef_lat: float = Form(...), hedef_lon: float = Form(...),
-    uydu_fotosu: UploadFile = File(...)
+    uydu_fotosu: UploadFile = File(...),
+    manuel_enkazlar: str = Form(None)
 ):
     """
     Otonom afet analiz endpoint'i.
@@ -100,7 +114,25 @@ async def otonom_analiz(
             tmp_path, img_w, img_h,
             nw_lat, nw_lon, se_lat, se_lon
         )
-        logger.info(f"🚨 {len(debris_list)} enkaz tespit edildi")
+        
+        # Manuel enkaz isleme (UI'den gelen)
+        if manuel_enkazlar:
+            import json
+            try:
+                manual_list = json.loads(manuel_enkazlar)
+                for m in manual_list:
+                    debris_list.append({
+                        "lat": m["lat"],
+                        "lon": m["lon"],
+                        "confidence": 1.0,
+                        "class": "manual_report",
+                        "danger_radius_m": m.get("radius", 50),
+                        "risk_score": 100
+                    })
+            except Exception as e:
+                logger.error(f"Manuel enkaz parse hatası: {e}")
+
+        logger.info(f"🚨 {len(debris_list)} toplam enkaz (Yapay Zeka + Manuel) tespit/dahil edildi")
 
         # 2. ROTA HESAPLA
         logger.info("🗺️ Güvenli rota hesaplanıyor...")
@@ -122,6 +154,7 @@ async def otonom_analiz(
                     "confidence": d["confidence"],
                     "sinif": d["class"],
                     "tehlike_yaricapi_m": d["danger_radius_m"],
+                    "risk_score": d["risk_score"],
                 }
                 for d in debris_list
             ],
@@ -140,6 +173,216 @@ async def otonom_analiz(
         return {"durum": "hata", "mesaj": "Beklenmeyen bir hata oluştu. Loglara bakın."}
     finally:
         # Geçici dosyayı temizle
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+@app.post("/api/goruntu-analiz")
+async def goruntu_analiz(
+    nw_lat: float = Form(...), nw_lon: float = Form(...),
+    se_lat: float = Form(...), se_lon: float = Form(...),
+    goruntu: UploadFile = File(...)
+):
+    """
+    Harici görüntü analiz endpoint'i.
+
+    Kullanıcının yüklediği enkaz görüntüsünü AI motoruyla analiz eder.
+    Rota hesabı yapmaz, sadece enkaz tespiti ve konum bilgisi döndürür.
+    """
+    logger.info("=" * 50)
+    logger.info("🖼️ HARİCİ GÖRÜNTÜ ANALİZ İSTEĞİ")
+    logger.info(f"   Viewport: NW({nw_lat:.5f}, {nw_lon:.5f}) → SE({se_lat:.5f}, {se_lon:.5f})")
+    logger.info(f"   Dosya: {goruntu.filename}")
+
+    tmp_file = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    tmp_path = tmp_file.name
+
+    try:
+        content = await goruntu.read()
+        tmp_file.write(content)
+        tmp_file.close()
+
+        img = cv2.imread(tmp_path)
+        if img is None:
+            raise HTTPException(status_code=400, detail="Görüntü okunamadı.")
+        img_h, img_w = img.shape[:2]
+        logger.info(f"📸 Görüntü boyutu: {img_w}x{img_h}")
+
+        # AI Analiz
+        logger.info("🧠 AI analiz başlatılıyor...")
+        debris_list = analyze_image(
+            tmp_path, img_w, img_h,
+            nw_lat, nw_lon, se_lat, se_lon
+        )
+        logger.info(f"🚨 {len(debris_list)} enkaz tespit edildi")
+
+        response = {
+            "durum": "basarili",
+            "tespit_sayisi": len(debris_list),
+            "enkazlar": [
+                {
+                    "lat": d["lat"],
+                    "lon": d["lon"],
+                    "confidence": d["confidence"],
+                    "sinif": d["class"],
+                    "tehlike_yaricapi_m": d["danger_radius_m"],
+                    "risk_score": d["risk_score"],
+                }
+                for d in debris_list
+            ],
+        }
+
+        logger.info(f"✅ Görüntü analizi tamamlandı: {len(debris_list)} enkaz")
+        return response
+
+    except RuntimeError as e:
+        logger.error(f"Runtime hatası: {e}")
+        return {"durum": "hata", "mesaj": str(e)}
+    except Exception as e:
+        logger.error(f"Beklenmeyen hata: {e}", exc_info=True)
+        return {"durum": "hata", "mesaj": "Beklenmeyen bir hata oluştu. Loglara bakın."}
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+@app.post("/api/drone-analiz")
+async def drone_analiz(
+    resim: UploadFile = File(...),
+    nw_lat: float = Form(...),
+    nw_lon: float = Form(...),
+    se_lat: float = Form(...),
+    se_lon: float = Form(...),
+    start_lat: float = Form(...),
+    start_lon: float = Form(...),
+    end_lat: float = Form(...),
+    end_lon: float = Form(...),
+    manuel_enkazlar: str = Form(None)
+):
+    """
+    Drone/Helikopter Modu v2:
+    1. Görüntüyü ai_engine.py ile SAHI analiz et (tile-based, NMS)
+    2. routing_engine.py ile gerçek sokak ağında güvenli rota hesapla
+    3. GPS rotayı piksel koordinatlarına çevirip döndür (canvas çizimi için)
+    """
+    logger.info("=" * 50)
+    logger.info(f"🚁 DRONE ANALİZ v2 İSTEĞİ")
+    logger.info(f"   GPS Sınırları: NW({nw_lat:.5f},{nw_lon:.5f}) → SE({se_lat:.5f},{se_lon:.5f})")
+    logger.info(f"   Başlangıç: ({start_lat:.5f},{start_lon:.5f})")
+    logger.info(f"   Hedef: ({end_lat:.5f},{end_lon:.5f})")
+
+    # 1. Dosyayı geçici diske kaydet
+    ext = os.path.splitext(resim.filename)[1] or ".jpg"
+    fd, tmp_path = tempfile.mkstemp(suffix=ext)
+    try:
+        with os.fdopen(fd, 'wb') as f:
+            content = await resim.read()
+            f.write(content)
+
+        logger.info(f"📸 Drone görüntüsü kaydedildi: {tmp_path}")
+
+        # Görüntü boyutlarını al
+        img = cv2.imread(tmp_path)
+        if img is None:
+            raise HTTPException(status_code=400, detail="Görüntü okunamadı.")
+        img_h, img_w = img.shape[:2]
+        logger.info(f"📸 Görüntü boyutu: {img_w}x{img_h}")
+
+        # 2. SAHI AI Analiz (ai_engine.py — Ana harita ile aynı motor)
+        logger.info("🧠 Drone SAHI analizi başlatılıyor...")
+        debris_list = analyze_drone_image_v2(
+            tmp_path, img_w, img_h,
+            nw_lat, nw_lon, se_lat, se_lon
+        )
+        
+        # Manuel enkaz isleme (UI'den gelen)
+        if manuel_enkazlar:
+            import json
+            try:
+                manual_list = json.loads(manuel_enkazlar)
+                for m in manual_list:
+                    debris_list.append({
+                        "lat": m["lat"],
+                        "lon": m["lon"],
+                        "confidence": 1.0,
+                        "class": "manual_report",
+                        "danger_radius_m": m.get("radius", 50),
+                        "risk_score": 100
+                    })
+            except Exception as e:
+                logger.error(f"Manuel enkaz parse hatası: {e}")
+
+        logger.info(f"🚨 {len(debris_list)} toplam enkaz (Yapay Zeka + Manuel) tespit/dahil edildi")
+
+        # 3. Güvenli Rota Hesapla (routing_engine.py — Gerçek sokak ağı)
+        logger.info("🗺️ Drone rotası hesaplanıyor (OSM sokak ağı)...")
+        route_result = calculate_route(
+            nw_lat, nw_lon, se_lat, se_lon,
+            start_lat, start_lon,
+            end_lat, end_lon,
+            debris_list
+        )
+
+        # 4. GPS rotayı piksel koordinatlarına çevir (canvas çizimi için)
+        pixel_route = route_gps_to_pixels(
+            route_result["primary_route"],
+            img_w, img_h,
+            nw_lat, nw_lon, se_lat, se_lon
+        )
+
+        pixel_alt_route = None
+        if route_result.get("alternative_route"):
+            pixel_alt_route = route_gps_to_pixels(
+                route_result["alternative_route"],
+                img_w, img_h,
+                nw_lat, nw_lon, se_lat, se_lon
+            )
+
+        # 5. Engel piksel koordinatlarını da hesapla
+        engeller_with_pixels = []
+        for d in debris_list:
+            px, py = gps_to_pixel(
+                d["lat"], d["lon"],
+                img_w, img_h,
+                nw_lat, nw_lon, se_lat, se_lon
+            )
+            engeller_with_pixels.append({
+                "lat": d["lat"],
+                "lon": d["lon"],
+                "x": round(px),
+                "y": round(py),
+                "w": round(d.get("area_px", 400) ** 0.5),  # Yaklaşık genişlik
+                "h": round(d.get("area_px", 400) ** 0.5),  # Yaklaşık yükseklik
+                "confidence": d["confidence"],
+                "sinif": d["class"],
+                "risk_score": d["risk_score"],
+                "tehlike_yaricapi_m": d["danger_radius_m"],
+            })
+
+        response = {
+            "durum": "basarili",
+            "tespit_sayisi": len(debris_list),
+            "engeller": engeller_with_pixels,
+            "rota": pixel_route,
+            "rota_alt": pixel_alt_route,
+            "gps_rota": route_result["primary_route"],
+            "gps_rota_alt": route_result.get("alternative_route"),
+        }
+
+        logger.info(f"✅ Drone analizi tamamlandı: {len(debris_list)} enkaz, rota: {len(pixel_route)} nokta")
+        return response
+
+    except RuntimeError as e:
+        logger.error(f"Runtime hatası: {e}")
+        return {"durum": "hata", "mesaj": str(e)}
+    except Exception as e:
+        logger.error(f"Drone analiz hatası: {e}", exc_info=True)
+        return {"durum": "hata", "mesaj": str(e)}
+    finally:
         try:
             os.unlink(tmp_path)
         except OSError:

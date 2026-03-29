@@ -69,10 +69,14 @@ def route_gps_to_pixels(
     """
     GPS rotasını (routing_engine'den dönen [[lat,lon],...]) piksel
     koordinatlarına çevirir, böylece canvas üzerine çizilebilir.
+    Görüntü sınırları dışına çıkan noktalar kırpılır (clamp).
     """
     pixel_route = []
     for point in gps_route:
         lat, lon = point[0], point[1]
         px, py = gps_to_pixel(lat, lon, img_w, img_h, nw_lat, nw_lon, se_lat, se_lon)
+        # Clamp: Piksel koordinatlarini goruntu sinirlari icinde tut
+        px = max(0, min(img_w, px))
+        py = max(0, min(img_h, py))
         pixel_route.append([round(px, 1), round(py, 1)])
     return pixel_route

@@ -203,5 +203,5 @@ Pull request'ler açıktır. Büyük değişiklikler için önce bir issue açı
 <br><br>
 <p align="center">
   <img src="https://upload.wikimedia.org/wikipedia/commons/b/b4/Flag_of_Turkey.svg" width="30" alt="Türkiye Cumhuriyeti" style="vertical-align: middle;">
-  <b style="vertical-align: middle; margin-left: 8px;">Türkiye'nin afet yönetimi kapasitesini artırmak için geliştirilmiştir.</b>
+  <b style="vertical-align: middle; margin-left: 8px;">Türkiye'nin afet yönetimi kapasitesini arttırmak için geliştirilmiştir.</b>
 </p>

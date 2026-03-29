@@ -1,4 +1,4 @@
-# 🛰️ Afet Rota Sistemi
+# 🛰️ Afet Rota Sistemi 
 
 > **Deprem sonrası afet bölgelerinde, uydu/drone görüntülerinden yapay zeka ile enkaz tespit ederek kurtarma ekipleri için güvenli rota hesaplayan web tabanlı komuta merkezi.**
 
